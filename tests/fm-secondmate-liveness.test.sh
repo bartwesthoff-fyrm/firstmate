@@ -727,7 +727,7 @@ SH
       . "$0/bin/fm-watch.sh"
       corr=$(fm_pending_reply_create "$FM_HOME" "$STATE" rsm1 "status of the remote work")
       fm_pending_reply_mark_delivered "$STATE" "$corr"
-      fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" "$REMOTE_CONNECT_TIMEOUT" &
+      fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" &
       secondmate_liveness_tick
       wait "$!"
       fm_pending_reply_get "$(fm_pending_reply_path "$STATE" "$corr")" phase
@@ -739,7 +739,7 @@ SH
     'secondmate rsm1 liveness: remote host unavailable or endpoint state unknown; route preserved on lab-host' \
     "a stalled liveness probe must read as unreachable"
   [ "$(grep -c 'ConnectTimeout=10' "$w/ssh.log")" -eq 2 ] \
-    || fail "both in-cycle reads must reach ssh with the watcher's connect timeout: $(cat "$w/ssh.log")"
+    || fail "both in-cycle reads must reach ssh with the fixed connect timeout: $(cat "$w/ssh.log")"
 
   # A host whose sshd never sends the banner fails at the connect timeout,
   # before the in-cycle bound.
@@ -748,13 +748,12 @@ SH
   # shellcheck disable=SC2016 # The child bash expands its own variables.
   env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
     FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_SSH_STALL=banner \
-    FM_SSH_CONNECT_TIMEOUT_SECONDS=1 \
     bash -c '
       . "$0/bin/fm-watch.sh"
       secondmate_liveness_tick
     ' "$ROOT"
   elapsed=$(($(date +%s) - started))
-  [ "$elapsed" -lt 8 ] || fail "a stalled SSH banner outlived the connect timeout ($elapsed seconds)"
+  [ "$elapsed" -lt 18 ] || fail "a stalled SSH banner outlived the connect timeout ($elapsed seconds)"
   assert_contains "$(cat "$w/home/state/.watch-triage.log")" \
     'secondmate rsm1 liveness: remote host unavailable or endpoint state unknown; route preserved on lab-host' \
     "a stalled banner must read as unreachable"
@@ -764,8 +763,7 @@ SH
   started=$(date +%s)
   rc=0
   # shellcheck disable=SC2016 # The child bash expands its own variables.
-  env -u FM_SSH_DEADLINE_SECONDS -u FM_SSH_CONNECT_TIMEOUT_SECONDS \
-    FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
+  env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
     FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_SSH_STALL=banner \
     bash -c '
       . "$0/bin/fm-timeout-lib.sh"
@@ -777,8 +775,8 @@ SH
   pass "watcher in-cycle reads, stalled banners, and the remote reply source all end promptly as unreachable"
 }
 
-# The watcher's SSH limits ride only on its own remote reads, so a backend
-# server it starts after a cycle's reads never inherits them.
+# The watcher's SSH deadline rides only on its own remote reads, so a backend
+# server it starts after a cycle's reads never inherits it.
 test_watcher_ssh_limits_stay_off_started_processes() {
   local w
   w=$(make_remote_probe_world watcher-ssh-limits-env)
@@ -787,14 +785,13 @@ test_watcher_ssh_limits_stay_off_started_processes() {
 case "$1" in
   has-session) exit 1 ;;
   new-session)
-    printf '%s|%s\n' "${FM_SSH_DEADLINE_SECONDS-unset}" "${FM_SSH_CONNECT_TIMEOUT_SECONDS-unset}" \
-      > "${FM_FAKE_TMUX_ENV:?}"
+    printf '%s\n' "${FM_SSH_DEADLINE_SECONDS-unset}" > "${FM_FAKE_TMUX_ENV:?}"
     ;;
 esac
 SH
   chmod +x "$w/fakebin/tmux"
   # shellcheck disable=SC2016 # The child bash expands its own variables.
-  env -u FM_SSH_DEADLINE_SECONDS -u FM_SSH_CONNECT_TIMEOUT_SECONDS \
+  env -u FM_SSH_DEADLINE_SECONDS \
     TMUX='' PATH="$w/fakebin:$PATH" FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
     FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_TMUX_ENV="$w/tmux.env" \
     bash -c '
@@ -804,9 +801,9 @@ SH
       fm_backend_tmux_container_ensure > /dev/null
     ' "$ROOT"
   [ -s "$w/ssh.log" ] || fail "the watcher cycle never made its remote read"
-  assert_equals 'unset|unset' "$(cat "$w/tmux.env" 2>/dev/null)" \
-    "a tmux server the watcher starts must not inherit its SSH limits"
-  pass "watcher SSH limits stay off the processes it starts"
+  assert_equals unset "$(cat "$w/tmux.env" 2>/dev/null)" \
+    "a tmux server the watcher starts must not inherit its SSH deadline"
+  pass "watcher SSH deadline stays off the processes it starts"
 }
 
 # A deadline must leave fm-on.sh's ssh under its caller's control on every

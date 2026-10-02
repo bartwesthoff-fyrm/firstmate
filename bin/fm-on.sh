@@ -32,10 +32,10 @@
 # is doing, so a legitimately long-but-alive remote command is never falsely
 # killed. FM_SSH_ALIVE_INTERVAL and FM_SSH_ALIVE_COUNT_MAX override the
 # defaults; the worst-case detection window is roughly interval * count.
-# Watcher callers opt in to FM_SSH_DEADLINE_SECONDS and
-# FM_SSH_CONNECT_TIMEOUT_SECONDS. The former bounds the whole SSH exchange
-# (including a live connection stalled on remote work), maps expiration to
-# transport-unavailable status 255, and leaves other callers' long jobs alone.
+# Watcher callers opt in to FM_SSH_DEADLINE_SECONDS, which bounds the whole SSH
+# exchange (including a live connection stalled on remote work) and adds a 10s
+# ConnectTimeout so a banner that never arrives fails first. Expiration maps to
+# transport-unavailable status 255, and other callers' long jobs are left alone.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -111,17 +111,11 @@ SSH_BIN=${FM_SSH_BIN:-ssh}
 ALIVE_INTERVAL=${FM_SSH_ALIVE_INTERVAL:-15}
 ALIVE_COUNT_MAX=${FM_SSH_ALIVE_COUNT_MAX:-3}
 DEADLINE=${FM_SSH_DEADLINE_SECONDS:-}
-CONNECT_TIMEOUT=${FM_SSH_CONNECT_TIMEOUT_SECONDS:-}
 case "$ALIVE_INTERVAL" in ''|*[!0-9]*) die "FM_SSH_ALIVE_INTERVAL must be a positive integer: $ALIVE_INTERVAL" ;; esac
 case "$ALIVE_COUNT_MAX" in ''|*[!0-9]*) die "FM_SSH_ALIVE_COUNT_MAX must be a positive integer: $ALIVE_COUNT_MAX" ;; esac
 [ "$ALIVE_INTERVAL" -gt 0 ] || die "FM_SSH_ALIVE_INTERVAL must be a positive integer: $ALIVE_INTERVAL"
 [ "$ALIVE_COUNT_MAX" -gt 0 ] || die "FM_SSH_ALIVE_COUNT_MAX must be a positive integer: $ALIVE_COUNT_MAX"
-for setting in DEADLINE CONNECT_TIMEOUT; do
-  value=${!setting}
-  [ -z "$value" ] && continue
-  case "$value" in 0*|*[!0-9]*) die "FM_SSH_${setting}_SECONDS must be a positive integer: $value" ;; esac
-  [ "$value" -gt 0 ] || die "FM_SSH_${setting}_SECONDS must be a positive integer: $value"
-done
+case "$DEADLINE" in 0*|*[!0-9]*) die "FM_SSH_DEADLINE_SECONDS must be a positive integer: $DEADLINE" ;; esac
 
 SSH_ARGS=(
   -o ForwardAgent=no
@@ -130,7 +124,7 @@ SSH_ARGS=(
   -o "ServerAliveInterval=$ALIVE_INTERVAL"
   -o "ServerAliveCountMax=$ALIVE_COUNT_MAX"
 )
-[ -z "$CONNECT_TIMEOUT" ] || SSH_ARGS+=(-o "ConnectTimeout=$CONNECT_TIMEOUT")
+[ -z "$DEADLINE" ] || SSH_ARGS+=(-o ConnectTimeout=10)
 SSH_ARGS+=(-- "$HOST" fm-remote-entrypoint.sh "$PROTOCOL" "$ROOT_B64" "$HOME_B64" "$ARGV_B64")
 if [ -n "$DEADLINE" ]; then
   # shellcheck source=bin/fm-timeout-lib.sh

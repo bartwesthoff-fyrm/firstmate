@@ -1524,12 +1524,10 @@ _fm_pending_reply_select_needing_work() {  # <record-path>...
 # selected in one pass first (_fm_pending_reply_select_needing_work), so a
 # settled record costs no lock and no fork, and the per-record path below runs,
 # unchanged, only for the records that selection returns. A given
-# <remote-observe-deadline> and <remote-observe-connect-timeout> bound each
-# remote busy-state observe in seconds; a recovery repost keeps the caller's
-# own SSH limits.
-fm_pending_reply_tick() {  # <state-dir> [remote-observe-deadline] [remote-observe-connect-timeout]
-  local state=$1 observe_deadline=${2:-${FM_SSH_DEADLINE_SECONDS:-}}
-  local observe_connect_timeout=${3:-${FM_SSH_CONNECT_TIMEOUT_SECONDS:-}}
+# <remote-observe-deadline> bounds each remote busy-state observe in seconds;
+# a recovery repost keeps fm-send's own budget.
+fm_pending_reply_tick() {  # <state-dir> [remote-observe-deadline]
+  local state=$1 observe_deadline=${2:-}
   local dir rec corr task_id phase delivered meta backend target label busy sm_home harness remote_host
   local observation observation_task found i
   local -a observation_tasks=() observation_values=() records=() selected=()
@@ -1636,8 +1634,7 @@ fm_pending_reply_tick() {  # <state-dir> [remote-observe-deadline] [remote-obser
         done
         if [ "$found" = 0 ]; then
           if [ -n "$remote_host" ]; then
-            observation=$(FM_SSH_DEADLINE_SECONDS=$observe_deadline FM_SSH_CONNECT_TIMEOUT_SECONDS=$observe_connect_timeout \
-              "$_FM_PENDING_REPLY_LIB_DIR/fm-on.sh" "$task_id" \
+            observation=$(FM_SSH_DEADLINE_SECONDS=$observe_deadline "$_FM_PENDING_REPLY_LIB_DIR/fm-on.sh" "$task_id" \
               fm-remote-secondmate-control.sh observe "$task_id" < /dev/null 2>/dev/null || printf 'unknown')
             case "$observation" in busy|idle|fallback-idle|unknown) ;; *) observation=unknown ;; esac
           else
