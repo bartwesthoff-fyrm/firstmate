@@ -708,34 +708,66 @@ test_watcher_remote_poll_deadline() {
   cat > "$w/fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FM_FAKE_SSH_LOG:?}"
+if [ "${FM_FAKE_SSH_STALL:?}" = banner ]; then
+  # Real ssh abandons a banner that never arrives after its ConnectTimeout.
+  for arg; do case "$arg" in ConnectTimeout=*) sleep "${arg#*=}"; exit 255 ;; esac; done
+fi
 exec sleep 300
 SH
   chmod +x "$w/fakebin/ssh"
+
+  # A host that answers the banner but stalls the command, under the watcher's
+  # own transport defaults. The cycle's two in-cycle reads (the pending-reply
+  # observe and the liveness state probe) run side by side and must each end
+  # at the tighter in-cycle bound, far below the inherited long-poll deadline.
   started=$(date +%s)
-  # Source the watcher to inherit its actual remote transport policy, then
-  # exercise the same read-only probe its liveness tick calls on each poll.
   # shellcheck disable=SC2016 # The child bash expands its own variables.
   out=$(env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
-    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" \
-    FM_WATCH_REMOTE_DEADLINE_SECONDS=2 FM_WATCH_REMOTE_CONNECT_TIMEOUT_SECONDS=1 \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_SSH_STALL=command \
     bash -c '
       . "$0/bin/fm-watch.sh"
-      fm_secondmate_liveness_probe "$1" rsm1 poll
-      printf "%s|%s|%s\n" "$FM_SM_LIVE_STATUS" "$FM_SM_LIVE_STATE" "$FM_SM_LIVE_REASON"
-    ' "$ROOT" "$w/home/state/rsm1.meta")
+      corr=$(fm_pending_reply_create "$FM_HOME" "$STATE" rsm1 "status of the remote work")
+      fm_pending_reply_mark_delivered "$STATE" "$corr"
+      fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" &
+      secondmate_liveness_tick
+      wait "$!"
+      printf "%s|%s\n" "$FM_SSH_DEADLINE_SECONDS" "$(fm_pending_reply_get "$(fm_pending_reply_path "$STATE" "$corr")" phase)"
+    ' "$ROOT")
   elapsed=$(($(date +%s) - started))
-  [ "$elapsed" -lt 8 ] || fail "hung watcher-side SSH probe exceeded its deadline ($elapsed seconds)"
-  [ "$out" = 'skipped|unknown|remote host unavailable or endpoint state unknown; route preserved on lab-host' ] \
-    || fail "timed-out remote probe must remain unreachable, got: $out"
-  assert_contains "$(cat "$w/ssh.log")" 'ConnectTimeout=1' \
-    "watcher-side SSH did not set a connection timeout"
+  [ "$elapsed" -lt 40 ] || fail "stalled in-cycle remote reads exceeded their deadline ($elapsed seconds)"
+  [ "$out" = '90|awaiting_report' ] \
+    || fail "in-cycle reads must keep the 90s long-poll default and leave the reply armed, got: $out"
+  assert_contains "$(cat "$w/home/state/.watch-triage.log")" \
+    'secondmate rsm1 liveness: remote host unavailable or endpoint state unknown; route preserved on lab-host' \
+    "a stalled liveness probe must read as unreachable"
+  [ "$(grep -c 'ConnectTimeout=10' "$w/ssh.log")" -eq 2 ] \
+    || fail "both in-cycle reads must reach ssh with the watcher's connect timeout: $(cat "$w/ssh.log")"
+
+  # A host whose sshd never sends the banner fails at the connect timeout,
+  # before the in-cycle bound.
+  rm -f "$w/home/state/.secondmate-liveness-tick" "$w/home/state/.watch-triage.log"
   started=$(date +%s)
-  # The process-event reply source launched from a watcher cycle uses the same
-  # transport boundary, even though its normal remote read can wait 55s.
+  # shellcheck disable=SC2016 # The child bash expands its own variables.
+  env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_SSH_STALL=banner \
+    FM_SSH_CONNECT_TIMEOUT_SECONDS=1 \
+    bash -c '
+      . "$0/bin/fm-watch.sh"
+      secondmate_liveness_tick
+    ' "$ROOT"
+  elapsed=$(($(date +%s) - started))
+  [ "$elapsed" -lt 8 ] || fail "a stalled SSH banner outlived the connect timeout ($elapsed seconds)"
+  assert_contains "$(cat "$w/home/state/.watch-triage.log")" \
+    'secondmate rsm1 liveness: remote host unavailable or endpoint state unknown; route preserved on lab-host' \
+    "a stalled banner must read as unreachable"
+
+  started=$(date +%s)
+  # The process-event reply source launched from a watcher cycle keeps the
+  # inherited overall bound, even though its normal remote read can wait 55s.
   # shellcheck disable=SC2016 # The child bash expands its own variables.
   if env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
-    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" \
-    FM_WATCH_REMOTE_DEADLINE_SECONDS=2 FM_WATCH_REMOTE_CONNECT_TIMEOUT_SECONDS=1 \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_SSH_STALL=command \
+    FM_SSH_DEADLINE_SECONDS=2 \
     bash -c '
       . "$0/bin/fm-watch.sh"
       "$0/bin/fm-procevent-remote-reply.sh" source rsm1
@@ -746,7 +778,7 @@ SH
   fi
   elapsed=$(($(date +%s) - started))
   [ "$elapsed" -lt 8 ] || fail "hung remote reply source exceeded its deadline ($elapsed seconds)"
-  pass "watcher poll and remote reply source: hung SSH returns promptly as unreachable"
+  pass "watcher in-cycle reads, stalled banners, and the remote reply source all end promptly as unreachable"
 }
 
 test_tmux_agent_state_classifies
