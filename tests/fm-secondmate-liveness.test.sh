@@ -702,6 +702,53 @@ test_remote_poll_probe_unreachable_preserves_route() {
   pass "poll probe: unreachable or inconclusive remote reads preserve the route"
 }
 
+test_watcher_remote_poll_deadline() {
+  local w out started elapsed
+  w=$(make_remote_probe_world probe-hung-ssh)
+  cat > "$w/fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_SSH_LOG:?}"
+exec sleep 300
+SH
+  chmod +x "$w/fakebin/ssh"
+  started=$(date +%s)
+  # Source the watcher to inherit its actual remote transport policy, then
+  # exercise the same read-only probe its liveness tick calls on each poll.
+  # shellcheck disable=SC2016 # The child bash expands its own variables.
+  out=$(env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" \
+    FM_WATCH_REMOTE_DEADLINE_SECONDS=2 FM_WATCH_REMOTE_CONNECT_TIMEOUT_SECONDS=1 \
+    bash -c '
+      . "$0/bin/fm-watch.sh"
+      fm_secondmate_liveness_probe "$1" rsm1 poll
+      printf "%s|%s|%s\n" "$FM_SM_LIVE_STATUS" "$FM_SM_LIVE_STATE" "$FM_SM_LIVE_REASON"
+    ' "$ROOT" "$w/home/state/rsm1.meta")
+  elapsed=$(($(date +%s) - started))
+  [ "$elapsed" -lt 8 ] || fail "hung watcher-side SSH probe exceeded its deadline ($elapsed seconds)"
+  [ "$out" = 'skipped|unknown|remote host unavailable or endpoint state unknown; route preserved on lab-host' ] \
+    || fail "timed-out remote probe must remain unreachable, got: $out"
+  assert_contains "$(cat "$w/ssh.log")" 'ConnectTimeout=1' \
+    "watcher-side SSH did not set a connection timeout"
+  started=$(date +%s)
+  # The process-event reply source launched from a watcher cycle uses the same
+  # transport boundary, even though its normal remote read can wait 55s.
+  # shellcheck disable=SC2016 # The child bash expands its own variables.
+  if env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" \
+    FM_WATCH_REMOTE_DEADLINE_SECONDS=2 FM_WATCH_REMOTE_CONNECT_TIMEOUT_SECONDS=1 \
+    bash -c '
+      . "$0/bin/fm-watch.sh"
+      "$0/bin/fm-procevent-remote-reply.sh" source rsm1
+    ' "$ROOT" >/dev/null 2>&1; then
+    fail "hung remote reply source unexpectedly succeeded"
+  else
+    [ "$?" -eq 255 ] || fail "hung remote reply source did not report transport unavailable"
+  fi
+  elapsed=$(($(date +%s) - started))
+  [ "$elapsed" -lt 8 ] || fail "hung remote reply source exceeded its deadline ($elapsed seconds)"
+  pass "watcher poll and remote reply source: hung SSH returns promptly as unreachable"
+}
+
 test_tmux_agent_state_classifies
 test_tmux_agent_state_rejects_malformed_targets_before_probe
 test_herdr_agent_state_preserves_husk_classifier
@@ -721,5 +768,6 @@ test_sweep_skips_mate_whose_liveness_lock_is_held
 test_sweep_refuses_relaunch_on_ledger_errors
 test_remote_poll_probe_maps_states
 test_remote_poll_probe_unreachable_preserves_route
+test_watcher_remote_poll_deadline
 
 echo "# all fm-secondmate-liveness tests passed"

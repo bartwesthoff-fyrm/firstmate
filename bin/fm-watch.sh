@@ -266,6 +266,11 @@ fi
 # turn-ended signature, annotation staleness checks, and guarded bookkeeping writes.
 
 POLL=${FM_POLL:-15}                   # seconds between cycles
+# Only this watcher's remote transport inherits these limits. A remote reply
+# source can legitimately wait 55s for a delta, so its overall bound exceeds
+# that window; a stuck SSH banner or remote command cannot stall this poll.
+export FM_SSH_DEADLINE_SECONDS=${FM_WATCH_REMOTE_DEADLINE_SECONDS:-90}
+export FM_SSH_CONNECT_TIMEOUT_SECONDS=${FM_WATCH_REMOTE_CONNECT_TIMEOUT_SECONDS:-10}
 # The liveness beacon is touched once per cycle, immediately before the
 # terminal wait below (event_wait_or_sleep) as well as at the top of the next
 # one, so a healthy cycle's beacon can legitimately age up to POLL seconds
