@@ -781,6 +781,57 @@ SH
   pass "watcher in-cycle reads, stalled banners, and the remote reply source all end promptly as unreachable"
 }
 
+# A deadline must leave fm-on.sh's ssh under its caller's control: an outer
+# bound that ends fm-on.sh's process group ends that ssh too, and a --stdin
+# payload still reaches ssh when the host's timeout mechanism is coreutils.
+test_remote_transport_deadline_stays_with_caller() {
+  local w pid i
+  w=$(make_remote_probe_world transport-deadline-caller)
+  cat > "$w/fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "${FM_FAKE_SSH_PID:?}"
+if [ "${FM_FAKE_SSH_MODE:?}" = payload ]; then
+  cat > "${FM_FAKE_SSH_STDIN:?}"
+  exit 0
+fi
+exec sleep 300
+SH
+  # Stands in for coreutils timeout, so this host offers the same mechanism a
+  # Linux primary does.
+  cat > "$w/fakebin/timeout" <<'SH'
+#!/usr/bin/env bash
+[ "$1" != -k ] || shift 2
+shift
+exec "$@"
+SH
+  chmod +x "$w/fakebin/ssh" "$w/fakebin/timeout"
+
+  # shellcheck disable=SC2016 # The child bash expands its own variables.
+  env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" FM_SSH_BIN="$w/fakebin/ssh" \
+    FM_FAKE_SSH_PID="$w/ssh.pid" FM_FAKE_SSH_MODE=stall FM_SSH_DEADLINE_SECONDS=60 \
+    bash -c '
+      . "$0/bin/fm-timeout-lib.sh"
+      fm_run_timed 2 "$0/bin/fm-on.sh" rsm1 fm-remote-secondmate-control.sh state rsm1
+    ' "$ROOT" > /dev/null 2>&1
+  pid=$(cat "$w/ssh.pid" 2>/dev/null) || fail "the stalled ssh never started"
+  for ((i = 0; i < 50; i++)); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+    fail "an outer bound ended fm-on.sh but left its ssh running past the bound"
+  fi
+
+  printf 'PAYLOAD\n' | env PATH="$w/fakebin:$PATH" FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_PID="$w/ssh.pid" FM_FAKE_SSH_MODE=payload \
+    FM_FAKE_SSH_STDIN="$w/stdin" FM_SSH_DEADLINE_SECONDS=60 \
+    "$ROOT/bin/fm-on.sh" --stdin rsm1 fm-remote-file.sh put payload 8 hash \
+    || fail "a bounded --stdin call failed"
+  assert_equals PAYLOAD "$(cat "$w/stdin")" "a bounded --stdin call did not forward the caller's payload"
+  pass "remote transport deadline: an outer bound ends ssh and --stdin forwards the payload"
+}
+
 test_tmux_agent_state_classifies
 test_tmux_agent_state_rejects_malformed_targets_before_probe
 test_herdr_agent_state_preserves_husk_classifier
@@ -801,5 +852,6 @@ test_sweep_refuses_relaunch_on_ledger_errors
 test_remote_poll_probe_maps_states
 test_remote_poll_probe_unreachable_preserves_route
 test_watcher_remote_poll_deadline
+test_remote_transport_deadline_stays_with_caller
 
 echo "# all fm-secondmate-liveness tests passed"

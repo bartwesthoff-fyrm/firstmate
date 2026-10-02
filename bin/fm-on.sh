@@ -137,9 +137,9 @@ if [ -n "$DEADLINE" ]; then
   . "$SCRIPT_DIR/fm-timeout-lib.sh"
   rc=0
   if [ "$STDIN_MODE" = caller ]; then
-    fm_run_timed "$DEADLINE" "$SSH_BIN" "${SSH_ARGS[@]}" || rc=$?
+    ( fm_exec_timed "$DEADLINE" 5 "$SSH_BIN" "${SSH_ARGS[@]}" ) || rc=$?
   else
-    fm_run_timed "$DEADLINE" "$SSH_BIN" "${SSH_ARGS[@]}" < /dev/null || rc=$?
+    ( fm_exec_timed "$DEADLINE" 5 "$SSH_BIN" "${SSH_ARGS[@]}" ) < /dev/null || rc=$?
   fi
   if fm_timed_out "$rc"; then exit 255; fi
   exit "$rc"
