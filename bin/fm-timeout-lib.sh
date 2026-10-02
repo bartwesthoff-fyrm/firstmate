@@ -21,7 +21,10 @@
 #       exit, and is reported as 124 too. Only 137 raised by GNU/BSD timeout's
 #       own KILL escalation, with no status recorded by the bounded command,
 #       also collapses into 124: there it means the bound fired, not that the
-#       command chose to die.
+#       command chose to die. On every mechanism the command reads the
+#       caller's stdin, and a TERM that would end the caller is passed on to the
+#       command's own group, so an outer bound that ends the caller ends the
+#       command too.
 #
 #   fm_exec_timed <seconds> <grace-seconds> <command> [args...]
 #       Replaces the calling shell with the bounded command, so it must be the
@@ -87,7 +90,7 @@ fm_timeout_mechanism() {
   fi
 }
 
-fm_run_bash_timeout() {
+fm_run_bash_timeout() (
   local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0
   shift
   command_status=$(mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
@@ -100,7 +103,7 @@ fm_run_bash_timeout() {
     command_rc=$?
     printf '%s\n' "$command_rc" > "$command_status"
     exit "$command_rc"
-  ) &
+  ) <&0 &
   child_pid=$!
   (
     set +m
@@ -112,6 +115,7 @@ fm_run_bash_timeout() {
     exit 124
   ) &
   watchdog_pid=$!
+  [ "$(trap -p TERM)" = "trap -- '' SIGTERM" ] || trap 'kill -TERM -- "-$child_pid" "-$watchdog_pid" 2>/dev/null' TERM
   [ "$monitor_was_on" -eq 1 ] || set +m
 
   if wait "$child_pid" 2>/dev/null; then
@@ -130,9 +134,9 @@ fm_run_bash_timeout() {
   fi
   rm -f "$command_status" "$deadline_status" 2>/dev/null || true
   return "$command_rc"
-}
+)
 
-fm_run_external_timeout() {
+fm_run_external_timeout() (
   local runner=$1 seconds=$2 status_file runner_pid runner_rc command_rc
   shift 2
   status_file=$(mktemp "${TMPDIR:-/tmp}/fm-timeout-status.XXXXXX" 2>/dev/null) || return 124
@@ -149,8 +153,9 @@ fm_run_external_timeout() {
     command_rc=$?
     printf "%s\n" "$command_rc" > "$status_file"
     exit "$command_rc"
-  ' _ "$status_file" "$@" &
+  ' _ "$status_file" "$@" <&0 &
   runner_pid=$!
+  [ "$(trap -p TERM)" = "trap -- '' SIGTERM" ] || trap 'kill -TERM -- "-$runner_pid" 2>/dev/null' TERM
   if wait "$runner_pid"; then
     runner_rc=0
   else
@@ -176,7 +181,7 @@ fm_run_external_timeout() {
       ;;
     *) return "$runner_rc" ;;
   esac
-}
+)
 
 fm_run_timed() {  # <seconds> <command...>
   local seconds=$1
@@ -185,7 +190,7 @@ fm_run_timed() {  # <seconds> <command...>
     timeout) fm_run_external_timeout timeout "$seconds" "$@" ;;
     gtimeout) fm_run_external_timeout gtimeout "$seconds" "$@" ;;
     perl)
-      perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit(($? & 127) ? 128 + ($? & 127) : $? >> 8)' \
+      perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } $SIG{TERM} = sub { kill "TERM", -$pid } if ($SIG{TERM} || "") ne "IGNORE"; local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit(($? & 127) ? 128 + ($? & 127) : $? >> 8)' \
         "$seconds" "$@"
       ;;
     bash) fm_run_bash_timeout "$seconds" "$@" ;;
@@ -221,7 +226,7 @@ fm_exec_timed() {  # <seconds> <grace-seconds> <command...>
     exit 125
   fi
   owner=${FM_EXEC_TIMED_OWNER_PID:-$$}
-  [ "$owner" != "${BASHPID:-}" ] || owner=$PPID
+  [ "$owner" != "$BASHPID" ] || owner=$PPID
   unset FM_EXEC_TIMED_OWNER_PID
   if command -v perl >/dev/null 2>&1; then
     exec perl -MPOSIX=WNOHANG,setpgid -MTime::HiRes=time -e '

@@ -266,18 +266,16 @@ fi
 # turn-ended signature, annotation staleness checks, and guarded bookkeeping writes.
 
 POLL=${FM_POLL:-15}                   # seconds between cycles
-# Every fm-on.sh call from this watcher and the processes it starts inherits
-# these limits, so a stuck SSH banner or remote command ends as unreachable.
-# The overall bound exceeds the 55s a detached remote reply source can
-# legitimately wait for a delta. The short reads made inside this watcher's
-# own cycle (the pending-reply observe and the secondmate liveness state probe)
-# take REMOTE_READ_DEADLINE instead, so a host that answers the banner but
-# stalls the command holds each read only that long and a few slow reads stay
-# well inside the stale grace below.
-export FM_SSH_DEADLINE_SECONDS=${FM_SSH_DEADLINE_SECONDS:-90}
-export FM_SSH_CONNECT_TIMEOUT_SECONDS=${FM_SSH_CONNECT_TIMEOUT_SECONDS:-10}
+# The remote reads made inside this watcher's own cycle (the pending-reply
+# observe and the secondmate liveness state probe) carry these limits on their
+# fm-on.sh calls, never in the environment of the processes the watcher starts.
+# The connect timeout ends a banner that never arrives; the read deadline ends
+# a command the host accepted but stalled, so a few slow reads stay well inside
+# the stale grace below. The detached remote reply runner bounds its own calls.
+REMOTE_CONNECT_TIMEOUT=${FM_SSH_CONNECT_TIMEOUT_SECONDS:-10}
 REMOTE_READ_DEADLINE=20
-[ "$FM_SSH_DEADLINE_SECONDS" -gt "$REMOTE_READ_DEADLINE" ] 2>/dev/null || REMOTE_READ_DEADLINE=$FM_SSH_DEADLINE_SECONDS
+[ -z "${FM_SSH_DEADLINE_SECONDS:-}" ] || [ "$FM_SSH_DEADLINE_SECONDS" -gt "$REMOTE_READ_DEADLINE" ] 2>/dev/null \
+  || REMOTE_READ_DEADLINE=$FM_SSH_DEADLINE_SECONDS
 # The liveness beacon is touched once per cycle, immediately before the
 # terminal wait below (event_wait_or_sleep) as well as at the top of the next
 # one, so a healthy cycle's beacon can legitimately age up to POLL seconds
@@ -1086,7 +1084,8 @@ secondmate_liveness_tick() {
     id=${id%.meta}
     case "$id" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
     fm_secondmate_liveness_lock "$id" || continue
-    FM_SSH_DEADLINE_SECONDS=$REMOTE_READ_DEADLINE fm_secondmate_liveness_probe "$meta" "$id" poll
+    FM_SSH_DEADLINE_SECONDS=$REMOTE_READ_DEADLINE FM_SSH_CONNECT_TIMEOUT_SECONDS=$REMOTE_CONNECT_TIMEOUT \
+      fm_secondmate_liveness_probe "$meta" "$id" poll
     bound_marker="$STATE/.secondmate-relaunch-bound-$id"
     reason='' notify_key='' err=''
     case "$FM_SM_LIVE_STATUS" in
@@ -2696,7 +2695,7 @@ while :; do
   # parent reports, observe backend busy/idle turn completion, send one recovery
   # repost after grace, and escalate once if the recovery turn is also missed.
   # No conversation scraping; unresolved records are never silently expired.
-  fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" || true
+  fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" "$REMOTE_CONNECT_TIMEOUT" || true
 
   # Endpoint liveness runs before queue observation: a positively dead or
   # missing secondmate endpoint is relaunched here on a bounded cadence, which

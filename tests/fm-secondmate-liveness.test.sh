@@ -703,7 +703,7 @@ test_remote_poll_probe_unreachable_preserves_route() {
 }
 
 test_watcher_remote_poll_deadline() {
-  local w out started elapsed
+  local w out started elapsed rc
   w=$(make_remote_probe_world probe-hung-ssh)
   cat > "$w/fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
@@ -716,10 +716,9 @@ exec sleep 300
 SH
   chmod +x "$w/fakebin/ssh"
 
-  # A host that answers the banner but stalls the command, under the watcher's
-  # own transport defaults. The cycle's two in-cycle reads (the pending-reply
-  # observe and the liveness state probe) run side by side and must each end
-  # at the tighter in-cycle bound, far below the inherited long-poll deadline.
+  # A host that answers the banner but stalls the command. The cycle's two
+  # in-cycle reads (the pending-reply observe and the liveness state probe) run
+  # side by side and must each end at the watcher's in-cycle bound.
   started=$(date +%s)
   # shellcheck disable=SC2016 # The child bash expands its own variables.
   out=$(env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
@@ -728,15 +727,14 @@ SH
       . "$0/bin/fm-watch.sh"
       corr=$(fm_pending_reply_create "$FM_HOME" "$STATE" rsm1 "status of the remote work")
       fm_pending_reply_mark_delivered "$STATE" "$corr"
-      fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" &
+      fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" "$REMOTE_CONNECT_TIMEOUT" &
       secondmate_liveness_tick
       wait "$!"
-      printf "%s|%s\n" "$FM_SSH_DEADLINE_SECONDS" "$(fm_pending_reply_get "$(fm_pending_reply_path "$STATE" "$corr")" phase)"
+      fm_pending_reply_get "$(fm_pending_reply_path "$STATE" "$corr")" phase
     ' "$ROOT")
   elapsed=$(($(date +%s) - started))
   [ "$elapsed" -lt 40 ] || fail "stalled in-cycle remote reads exceeded their deadline ($elapsed seconds)"
-  [ "$out" = '90|awaiting_report' ] \
-    || fail "in-cycle reads must keep the 90s long-poll default and leave the reply armed, got: $out"
+  assert_equals awaiting_report "$out" "a stalled remote observe must leave the reply armed"
   assert_contains "$(cat "$w/home/state/.watch-triage.log")" \
     'secondmate rsm1 liveness: remote host unavailable or endpoint state unknown; route preserved on lab-host' \
     "a stalled liveness probe must read as unreachable"
@@ -761,31 +759,61 @@ SH
     'secondmate rsm1 liveness: remote host unavailable or endpoint state unknown; route preserved on lab-host' \
     "a stalled banner must read as unreachable"
 
+  # The detached process-event reply source runs outside the watcher's
+  # environment, so it must bound its own remote read.
   started=$(date +%s)
-  # The process-event reply source launched from a watcher cycle keeps the
-  # inherited overall bound, even though its normal remote read can wait 55s.
+  rc=0
   # shellcheck disable=SC2016 # The child bash expands its own variables.
-  if env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
-    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_SSH_STALL=command \
-    FM_SSH_DEADLINE_SECONDS=2 \
+  env -u FM_SSH_DEADLINE_SECONDS -u FM_SSH_CONNECT_TIMEOUT_SECONDS \
+    FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_SSH_STALL=banner \
     bash -c '
-      . "$0/bin/fm-watch.sh"
-      "$0/bin/fm-procevent-remote-reply.sh" source rsm1
-    ' "$ROOT" >/dev/null 2>&1; then
-    fail "hung remote reply source unexpectedly succeeded"
-  else
-    [ "$?" -eq 255 ] || fail "hung remote reply source did not report transport unavailable"
-  fi
+      . "$0/bin/fm-timeout-lib.sh"
+      fm_run_timed 30 "$0/bin/fm-procevent-remote-reply.sh" source rsm1
+    ' "$ROOT" >/dev/null 2>&1 || rc=$?
   elapsed=$(($(date +%s) - started))
-  [ "$elapsed" -lt 8 ] || fail "hung remote reply source exceeded its deadline ($elapsed seconds)"
+  assert_equals 255 "$rc" "a stalled remote reply source must report transport unavailable"
+  [ "$elapsed" -lt 20 ] || fail "a stalled remote reply source outlived its own connect timeout ($elapsed seconds)"
   pass "watcher in-cycle reads, stalled banners, and the remote reply source all end promptly as unreachable"
 }
 
-# A deadline must leave fm-on.sh's ssh under its caller's control: an outer
-# bound that ends fm-on.sh's process group ends that ssh too, and a --stdin
-# payload still reaches ssh when the host's timeout mechanism is coreutils.
+# The watcher's SSH limits ride only on its own remote reads, so a backend
+# server it starts after a cycle's reads never inherits them.
+test_watcher_ssh_limits_stay_off_started_processes() {
+  local w
+  w=$(make_remote_probe_world watcher-ssh-limits-env)
+  cat > "$w/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  has-session) exit 1 ;;
+  new-session)
+    printf '%s|%s\n' "${FM_SSH_DEADLINE_SECONDS-unset}" "${FM_SSH_CONNECT_TIMEOUT_SECONDS-unset}" \
+      > "${FM_FAKE_TMUX_ENV:?}"
+    ;;
+esac
+SH
+  chmod +x "$w/fakebin/tmux"
+  # shellcheck disable=SC2016 # The child bash expands its own variables.
+  env -u FM_SSH_DEADLINE_SECONDS -u FM_SSH_CONNECT_TIMEOUT_SECONDS \
+    TMUX='' PATH="$w/fakebin:$PATH" FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
+    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_LOG="$w/ssh.log" FM_FAKE_TMUX_ENV="$w/tmux.env" \
+    bash -c '
+      . "$0/bin/fm-watch.sh"
+      secondmate_liveness_tick
+      fm_backend_source tmux
+      fm_backend_tmux_container_ensure > /dev/null
+    ' "$ROOT"
+  [ -s "$w/ssh.log" ] || fail "the watcher cycle never made its remote read"
+  assert_equals 'unset|unset' "$(cat "$w/tmux.env" 2>/dev/null)" \
+    "a tmux server the watcher starts must not inherit its SSH limits"
+  pass "watcher SSH limits stay off the processes it starts"
+}
+
+# A deadline must leave fm-on.sh's ssh under its caller's control on every
+# timeout mechanism: an outer bound that ends fm-on.sh ends that ssh too, and a
+# --stdin payload still reaches ssh.
 test_remote_transport_deadline_stays_with_caller() {
-  local w pid i
+  local w pid i case_name pth override mechanism
   w=$(make_remote_probe_world transport-deadline-caller)
   cat > "$w/fakebin/ssh" <<'SH'
 #!/usr/bin/env bash
@@ -796,40 +824,63 @@ if [ "${FM_FAKE_SSH_MODE:?}" = payload ]; then
 fi
 exec sleep 300
 SH
-  # Stands in for coreutils timeout, so this host offers the same mechanism a
-  # Linux primary does.
-  cat > "$w/fakebin/timeout" <<'SH'
-#!/usr/bin/env bash
-[ "$1" != -k ] || shift 2
-shift
-exec "$@"
-SH
-  chmod +x "$w/fakebin/ssh" "$w/fakebin/timeout"
+  chmod +x "$w/fakebin/ssh"
+  # Stand-ins for coreutils timeout and gtimeout: like GNU timeout, each moves
+  # the command into its own process group.
+  mkdir -p "$w/timeout-bin" "$w/gtimeout-bin"
+  cat > "$w/timeout-bin/timeout" <<'PL'
+#!/usr/bin/env perl
+shift, shift if $ARGV[0] eq "-k";
+shift;
+setpgrp(0, 0);
+exec @ARGV or exit 127;
+PL
+  cp "$w/timeout-bin/timeout" "$w/gtimeout-bin/gtimeout"
+  chmod +x "$w/timeout-bin/timeout" "$w/gtimeout-bin/gtimeout"
 
-  # shellcheck disable=SC2016 # The child bash expands its own variables.
-  env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" FM_SSH_BIN="$w/fakebin/ssh" \
-    FM_FAKE_SSH_PID="$w/ssh.pid" FM_FAKE_SSH_MODE=stall FM_SSH_DEADLINE_SECONDS=60 \
-    bash -c '
-      . "$0/bin/fm-timeout-lib.sh"
-      fm_run_timed 2 "$0/bin/fm-on.sh" rsm1 fm-remote-secondmate-control.sh state rsm1
-    ' "$ROOT" > /dev/null 2>&1
-  pid=$(cat "$w/ssh.pid" 2>/dev/null) || fail "the stalled ssh never started"
-  for ((i = 0; i < 50; i++)); do
-    kill -0 "$pid" 2>/dev/null || break
-    sleep 0.1
+  for case_name in host bash timeout gtimeout; do
+    pth=$PATH override=''
+    case "$case_name" in
+      bash) override=bash ;;
+      timeout|gtimeout) pth="$w/$case_name-bin:$PATH" ;;
+    esac
+    # shellcheck disable=SC2016 # The child bash expands its own variables.
+    mechanism=$(env PATH="$pth" FM_TIMEOUT_MECHANISM_OVERRIDE="$override" \
+      bash -c '. "$0/bin/fm-timeout-lib.sh"; fm_timeout_mechanism' "$ROOT")
+    if [ "$case_name" != host ] && [ "$mechanism" != "$case_name" ]; then
+      echo "# skip $case_name mechanism: this host selects $mechanism"
+      continue
+    fi
+    rm -f "$w/ssh.pid" "$w/stdin"
+
+    # shellcheck disable=SC2016 # The child bash expands its own variables.
+    env FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" FM_SSH_BIN="$w/fakebin/ssh" \
+      FM_FAKE_SSH_PID="$w/ssh.pid" FM_FAKE_SSH_MODE=stall \
+      bash -c '
+        . "$0/bin/fm-timeout-lib.sh"
+        fm_run_timed 2 env PATH="$1" FM_TIMEOUT_MECHANISM_OVERRIDE="$2" FM_SSH_DEADLINE_SECONDS=60 \
+          "$0/bin/fm-on.sh" rsm1 fm-remote-secondmate-control.sh state rsm1
+      ' "$ROOT" "$pth" "$override" > /dev/null 2>&1
+    pid=$(cat "$w/ssh.pid" 2>/dev/null) || fail "$mechanism: the stalled ssh never started"
+    for ((i = 0; i < 50; i++)); do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail "$mechanism: an outer bound ended fm-on.sh but left its ssh running past the bound"
+    fi
+
+    printf 'PAYLOAD\n' | env PATH="$pth" FM_TIMEOUT_MECHANISM_OVERRIDE="$override" \
+      FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" FM_SSH_BIN="$w/fakebin/ssh" \
+      FM_FAKE_SSH_PID="$w/ssh.pid" FM_FAKE_SSH_MODE=payload FM_FAKE_SSH_STDIN="$w/stdin" \
+      FM_SSH_DEADLINE_SECONDS=60 \
+      "$ROOT/bin/fm-on.sh" --stdin rsm1 fm-remote-file.sh put payload 8 hash \
+      || fail "$mechanism: a bounded --stdin call failed"
+    assert_equals PAYLOAD "$(cat "$w/stdin" 2>/dev/null)" \
+      "$mechanism: a bounded --stdin call did not forward the caller's payload"
   done
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -KILL "$pid" 2>/dev/null || true
-    fail "an outer bound ended fm-on.sh but left its ssh running past the bound"
-  fi
-
-  printf 'PAYLOAD\n' | env PATH="$w/fakebin:$PATH" FM_HOME="$w/home" FM_DATA_OVERRIDE="$w/home/data" \
-    FM_SSH_BIN="$w/fakebin/ssh" FM_FAKE_SSH_PID="$w/ssh.pid" FM_FAKE_SSH_MODE=payload \
-    FM_FAKE_SSH_STDIN="$w/stdin" FM_SSH_DEADLINE_SECONDS=60 \
-    "$ROOT/bin/fm-on.sh" --stdin rsm1 fm-remote-file.sh put payload 8 hash \
-    || fail "a bounded --stdin call failed"
-  assert_equals PAYLOAD "$(cat "$w/stdin")" "a bounded --stdin call did not forward the caller's payload"
-  pass "remote transport deadline: an outer bound ends ssh and --stdin forwards the payload"
+  pass "remote transport deadline: on each timeout mechanism an outer bound ends ssh and --stdin forwards the payload"
 }
 
 test_tmux_agent_state_classifies
@@ -852,6 +903,7 @@ test_sweep_refuses_relaunch_on_ledger_errors
 test_remote_poll_probe_maps_states
 test_remote_poll_probe_unreachable_preserves_route
 test_watcher_remote_poll_deadline
+test_watcher_ssh_limits_stay_off_started_processes
 test_remote_transport_deadline_stays_with_caller
 
 echo "# all fm-secondmate-liveness tests passed"
