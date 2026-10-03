@@ -44,20 +44,15 @@ run_watcher_once() {
   mkdir -p "$state"
   date '+%s' > "$state/.afk"
   [ "$preserve_last_check" = 1 ] || rm -f "$state/.last-check"
-  local reference_time last_check_before
-  reference_time=$(date '+%s')
-  last_check_before=$(stat -f '%m' "$state/.last-check" 2>/dev/null || stat -c '%Y' "$state/.last-check" 2>/dev/null || printf 'missing')
+  local launch_marker
+  launch_marker="$state/.watcher-scan-ready"
+  rm -f "$launch_marker"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  local watcher_pid=$! i=0 last_check_now
-  # The watcher touches .last-check after startup reconciliation and immediately
-  # before its first status-signal scan; require a fresh mtime after launch.
+  local watcher_pid=$! i=0
+  # Wait until this launch has reached its first status-signal scan.
   while [ "$i" -lt 300 ]; do
-    last_check_now=$(stat -f '%m' "$state/.last-check" 2>/dev/null || stat -c '%Y' "$state/.last-check" 2>/dev/null || printf 'missing')
-    if [ "$last_check_now" != missing ] && [ "$last_check_now" != "$last_check_before" ] \
-      && [ "$last_check_now" -ge "$reference_time" ]; then
-      break
-    fi
+    [ -e "$launch_marker" ] && break
     sleep 0.1
     i=$((i + 1))
   done
