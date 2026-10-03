@@ -115,7 +115,20 @@ fm_run_bash_timeout() (
     exit 124
   ) &
   watchdog_pid=$!
-  [ "$(trap -p TERM)" = "trap -- '' SIGTERM" ] || trap 'kill -TERM -- "-$child_pid" "-$watchdog_pid" 2>/dev/null' TERM
+  # An outer bound can TERM this wrapper before its own deadline. Do not
+  # cancel the watchdog without replacing its KILL escalation: a command that
+  # ignores TERM would otherwise outlive the wrapper with no bound left.
+  [ "$(trap -p TERM)" = "trap -- '' SIGTERM" ] || trap '
+    trap "" TERM
+    kill -TERM -- "-$child_pid" 2>/dev/null || true
+    sleep 0.2
+    kill -KILL -- "-$child_pid" 2>/dev/null || true
+    kill -TERM -- "-$watchdog_pid" 2>/dev/null || true
+    wait "$child_pid" 2>/dev/null || true
+    wait "$watchdog_pid" 2>/dev/null || true
+    rm -f "$command_status" "$deadline_status" 2>/dev/null || true
+    exit 143
+  ' TERM
   [ "$monitor_was_on" -eq 1 ] || set +m
 
   if wait "$child_pid" 2>/dev/null; then
