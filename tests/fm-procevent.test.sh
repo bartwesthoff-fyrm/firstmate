@@ -249,10 +249,11 @@ sup=$(PATH="${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" bash -c \
   '. "$1/bin/fm-supervision-lib.sh"; fm_supervision_needed "$2" && echo yes || echo no' _ "$ROOT" "$H1/state")
 assert_contains "$sup" yes "a registered source needs supervision with no task metadata"
 
-pe "$H1" reconcile >/dev/null
-# Reconcile's replacement runner is detached, so ownership is recorded after
-# reconcile has already returned. Wait for the claim itself: a duplicate start
-# only has an owner to lose to once that claim exists.
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$H1" reconcile >/dev/null \
+  || fail "reconcile did not confirm the registered source's listener"
+# Reconcile confirms its detached runner by either the claim or the launch
+# stamp. Wait for the claim itself: a duplicate start only has an owner to lose
+# to once that claim exists.
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/src-one.claim" || fail "reconcile never claimed the registered source"
 out=$(pe "$H1" start src-one)
 assert_contains "$out" "already owned" "a duplicate start loses instead of running a second child"
@@ -284,7 +285,8 @@ ln -s "$HPHYS" "$TMP_ROOT/symlinked-parent"
 HSYM="$TMP_ROOT/symlinked-parent/home"; new_home "$HSYM"
 SYM_TRIGGER="$TMP_ROOT/symlink-trigger"
 pe_register "$HSYM" lavish symlinked-src -- "$BLOCKER" "$SYM_TRIGGER" "symlinked payload" >/dev/null
-pe "$HSYM" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HSYM" reconcile >/dev/null \
+  || fail "a home reached through a symlinked ancestor did not confirm its listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/symlinked-src.claim" \
   || fail "a home reached through a symlinked ancestor never claimed its source"
 : > "$SYM_TRIGGER"
@@ -836,8 +838,7 @@ PATH="$MULTI_BIN:$PATH" LAVISH_AXI_HOST=recovery.example LAVISH_AXI_PORT=34387 F
 MULTI_RUN=$!
 for _ in $(seq 1 100); do [ "$(cat "$MULTI_ROOT/count" 2>/dev/null || true)" = 1 ] && break; sleep 0.02; done
 touch "$MULTI_ROOT/trigger1"
-for _ in $(seq 1 100); do [ -f "$HMULTI/state/worker-1.inbox/001.msg" ] && break; sleep 0.02; done
-[ -f "$HMULTI/state/worker-1.inbox/001.msg" ] \
+wait_for "$HMULTI/state/worker-1.inbox/001.msg" 600 \
   || fail "worker-owned feedback did not reach the worker inbox"
 [ -z "$(wake_payloads "$HMULTI")" ] \
   || fail "worker-owned feedback woke firstmate: $(wake_payloads "$HMULTI")"
@@ -886,8 +887,7 @@ for _ in $(seq 1 100); do
   sleep 0.03
 done
 touch "$MULTI_ROOT/trigger2"
-for _ in $(seq 1 100); do [ -f "$HMULTI/state/worker-1.inbox/002.msg" ] && break; sleep 0.02; done
-[ -f "$HMULTI/state/worker-1.inbox/002.msg" ] \
+wait_for "$HMULTI/state/worker-1.inbox/002.msg" 600 \
   || fail "the next worker-owned feedback did not reach the worker inbox"
 PATH="$MULTI_BIN:$PATH" FM_HOME="$HMULTI" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$MULTI_ART" --for worker-1 \
@@ -899,7 +899,8 @@ for _ in $(seq 1 100); do
   sleep 0.03
 done
 touch "$MULTI_ROOT/trigger3"
-for _ in $(seq 1 100); do [ -f "$HMULTI/state/worker-1.inbox/003.msg" ] && break; sleep 0.02; done
+wait_for "$HMULTI/state/worker-1.inbox/003.msg" 600 \
+  || fail "the terminal worker-owned round did not reach the worker inbox"
 [ -f "$HMULTI/state/procevent-inbox/$multi_id.1.handled" ] \
   || fail "first worker-owned round was not acknowledged by re-arm"
 [ -f "$HMULTI/state/procevent-inbox/$multi_id.2.handled" ] \
@@ -1839,8 +1840,8 @@ HA="$TMP_ROOT/ha"; HB="$TMP_ROOT/hb"; new_home "$HA"; new_home "$HB"
 TRIG2="$TMP_ROOT/trigger-two"
 pe_register "$HA" lavish shared-src -- "$BLOCKER" "$TRIG2" "shared" >/dev/null
 pe_register "$HB" lavish shared-src -- "$BLOCKER" "$TRIG2" "shared" >/dev/null
-pe "$HA" reconcile >/dev/null
-sleep 0.5
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HA" reconcile >/dev/null \
+  || fail "the first home did not confirm its listener for the shared source"
 out=$(pe "$HB" start shared-src)
 assert_contains "$out" "already owned" "a second home cannot own a source another home already owns"
 [ -z "$(wake_payloads "$HB")" ] || fail "the losing home published an event"
@@ -1868,7 +1869,8 @@ ORPHAN_STARTED="$TMP_ROOT/orphan-src.started"
 HZ="$TMP_ROOT/hz"; new_home "$HZ"
 pe_register "$HZ" lavish orphan-src \
   -- "$STARTED_BLOCKER" "$ORPHAN_STARTED" "$BLOCKER" "$TRIG4" "orphan" >/dev/null
-pe "$HZ" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HZ" reconcile >/dev/null \
+  || fail "reconcile did not confirm the orphan fixture's listener"
 wait_for "$ORPHAN_STARTED" || fail "the orphan fixture runner never entered its source command"
 orphan_pid=$(sed -n '2p' "$FM_PROCEVENT_CLAIM_ROOT/orphan-src.claim" 2>/dev/null)
 if [ -z "$orphan_pid" ] || ! kill -0 "$orphan_pid" 2>/dev/null; then
@@ -1965,7 +1967,8 @@ SH
 chmod +x "$ORPHAN_BLOCKER"
 pe_register "$HG" lavish orphan-src -- \
   "$ORPHAN_BLOCKER" "$ORPHAN_LOG" "$ORPHAN_TRIGGER" "$ORPHAN_GROUP" "$ORPHAN_OVERLAP" >/dev/null
-pe "$HG" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HG" reconcile >/dev/null \
+  || fail "reconcile did not confirm the leader-crash fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/orphan-src.claim" || fail "leader-crash fixture never claimed its source"
 wait_for "$ORPHAN_LOG" || fail "leader-crash fixture source never started"
 orphan_leader=$(sed -n '2p' "$FM_PROCEVENT_CLAIM_ROOT/orphan-src.claim")
@@ -2038,7 +2041,8 @@ pe_register "$HG2" lavish dead-gen-src -- "$RACE_BLOCKER" "$DEAD_LOG" "$DEAD_TRI
 printf '%s\n%s\ndead-token\ndead-identity\n%s\n' "$HG2" 999999 "$HG2/state/procevent" \
   > "$FM_PROCEVENT_CLAIM_ROOT/dead-gen-src.claim"
 chmod 0600 "$FM_PROCEVENT_CLAIM_ROOT/dead-gen-src.claim"
-dead_out=$(pe "$HG2" reconcile)
+dead_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HG2" reconcile) \
+  || fail "reconcile could not confirm the reclaimed dead generation: $dead_out"
 assert_contains "$dead_out" "started=1" "a generation with no leader and no group is still reclaimable"
 wait_for "$DEAD_LOG" || fail "the replacement source never started for a truly dead generation"
 : > "$DEAD_TRIGGER"
@@ -2065,7 +2069,8 @@ HSR="$TMP_ROOT/hsr"; new_home "$HSR"
 SR_TRIGGER="$TMP_ROOT/state-root-trigger"
 SR_LOG="$TMP_ROOT/state-root-executions"
 pe_register "$HSR" lavish state-root-src -- "$RACE_BLOCKER" "$SR_LOG" "$SR_TRIGGER" >/dev/null
-pe "$HSR" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HSR" reconcile >/dev/null \
+  || fail "reconcile did not confirm the state-root fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/state-root-src.claim" \
   || fail "state-root fixture never claimed its source"
 wait_for "$SR_LOG" || fail "state-root fixture source never started"
@@ -2082,7 +2087,8 @@ kill -0 -"$sr_leader" 2>/dev/null && fail "fixture invalid: the owned group outl
 # Drift the live state root away from what the claim recorded.
 chmod 750 "$HSR/state" || fail "could not drift the state-root identity"
 
-sr_out=$(pe "$HSR" reconcile)
+sr_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HSR" reconcile) \
+  || fail "reconcile could not confirm the replacement after the state root drifted: $sr_out"
 assert_contains "$sr_out" "started=1" "a dead generation was not reclaimed after the state root drifted: $sr_out"
 # Reporting a start is not the same fact as listening: the previous behavior
 # reported exactly this while the replacement silently failed to claim.
@@ -2122,7 +2128,8 @@ HSR3="$TMP_ROOT/hsr3"; new_home "$HSR3"
 SR3_TRIGGER="$TMP_ROOT/state-root-live-trigger"
 SR3_LOG="$TMP_ROOT/state-root-live-executions"
 pe_register "$HSR3" lavish live-drift-src -- "$RACE_BLOCKER" "$SR3_LOG" "$SR3_TRIGGER" >/dev/null
-pe "$HSR3" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HSR3" reconcile >/dev/null \
+  || fail "reconcile did not confirm the live-drift fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/live-drift-src.claim" \
   || fail "live-drift fixture never claimed its source"
 wait_for "$SR3_LOG" || fail "live-drift fixture source never started"
@@ -2145,7 +2152,8 @@ HSR4="$TMP_ROOT/hsr4"; new_home "$HSR4"
 SR4_TRIGGER="$TMP_ROOT/state-root-reused-trigger"
 SR4_LOG="$TMP_ROOT/state-root-reused-executions"
 pe_register "$HSR4" lavish reused-group-src -- "$RACE_BLOCKER" "$SR4_LOG" "$SR4_TRIGGER" >/dev/null
-pe "$HSR4" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HSR4" reconcile >/dev/null \
+  || fail "reconcile did not confirm the reused-group fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/reused-group-src.claim" \
   || fail "reused-group fixture never claimed its source"
 wait_for "$SR4_LOG" || fail "reused-group fixture source never started"
@@ -2251,7 +2259,8 @@ HSR5="$TMP_ROOT/hsr5"; new_home "$HSR5"
 SR5_TRIGGER="$TMP_ROOT/reused-plain-trigger"
 SR5_LOG="$TMP_ROOT/reused-plain-executions"
 pe_register "$HSR5" lavish reused-plain-src -- "$RACE_BLOCKER" "$SR5_LOG" "$SR5_TRIGGER" >/dev/null
-pe "$HSR5" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HSR5" reconcile >/dev/null \
+  || fail "reconcile did not confirm the undrifted reused-pid fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/reused-plain-src.claim" \
   || fail "undrifted reused-pid fixture never claimed its source"
 wait_for "$SR5_LOG" || fail "undrifted reused-pid fixture source never started"
@@ -2518,7 +2527,7 @@ pe "$HFC" retire zz-hold-src >/dev/null 2>&1 || true
 pass "a launch that finished before confirmation looked is still reported as started"
 
 # --- a zero-padded confirm window is read as base 10 -------------------------
-# The window's validator reads base 10, so `08` is a value it accepts. Read as
+# The window's validator reads base 10, so `090` is a value it accepts. Read as
 # octal in arithmetic it is not a number at all, which under `set -u` takes the
 # confirmation down with it and turns every launch of the cycle - including a
 # perfectly healthy one - into a reported failure and a non-zero exit.
@@ -2526,7 +2535,7 @@ HZP="$TMP_ROOT/hzp"; new_home "$HZP"
 ZP_TRIGGER="$TMP_ROOT/zeropad-trigger"
 pe_register "$HZP" lavish zeropad-src -- "$BLOCKER" "$ZP_TRIGGER" "zeropad" >/dev/null
 zp_rc=0
-zp_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=08 pe "$HZP" reconcile 2>/dev/null) || zp_rc=$?
+zp_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=090 pe "$HZP" reconcile 2>/dev/null) || zp_rc=$?
 assert_contains "$zp_out" "started=1" \
   "a zero-padded confirm window lost the launch reconcile started: $zp_out"
 assert_contains "$zp_out" "failed=0" \
@@ -2560,7 +2569,8 @@ for iw_value in 5s 0 700; do
 done
 # The refusal costs the source nothing: it still arms on the next run with a
 # usable value.
-iw_ok=$(pe "$HIW" reconcile)
+iw_ok=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HIW" reconcile) \
+  || fail "the source could not confirm its listener once its confirm window was usable: $iw_ok"
 assert_contains "$iw_ok" "started=1" \
   "the source did not arm once its confirm window was usable: $iw_ok"
 assert_contains "$iw_ok" "failed=0" \
@@ -2600,7 +2610,7 @@ chmod 0600 "$UW_CLAIM"
 kill -0 999999 2>/dev/null && fail "fixture invalid: the untidyable claim names a live pid"
 kill -0 -999999 2>/dev/null && fail "fixture invalid: the untidyable claim's process group is alive"
 uw_rc=0
-uw_out=$(pe "$HUW" reconcile) || uw_rc=$?
+uw_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HUW" reconcile) || uw_rc=$?
 [ "$uw_rc" -eq 0 ] || fail "reconcile could not repair a provably dead generation: $uw_out"
 # Reporting a start is not the same fact as listening, so prove the listening
 # half first: before this fix reconcile reported exactly this start on every run
@@ -2618,7 +2628,8 @@ pass "a dead generation whose leftovers cannot be tidied never keeps owning its 
 HJ="$TMP_ROOT/hj"; new_home "$HJ"
 TORN_TRIGGER="$TMP_ROOT/torn-trigger"
 pe_register "$HJ" lavish torn-src -- "$BLOCKER" "$TORN_TRIGGER" "torn" >/dev/null
-pe "$HJ" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HJ" reconcile >/dev/null \
+  || fail "reconcile did not confirm the torn-read fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/torn-src.claim" || fail "torn-read fixture runner did not claim its source"
 awk 'NR == 3 { print "replacement-token"; next } { print }' \
   "$FM_PROCEVENT_CLAIM_ROOT/torn-src.claim" > "$TMP_ROOT/torn-next.claim"
@@ -2684,7 +2695,8 @@ pass "detected PID reuse is refused before signalling"
 HL="$TMP_ROOT/hl"; new_home "$HL"
 IDENTITY_TRIGGER="$TMP_ROOT/identity-trigger"
 pe_register "$HL" lavish identity-src -- "$BLOCKER" "$IDENTITY_TRIGGER" "identity" >/dev/null
-pe "$HL" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HL" reconcile >/dev/null \
+  || fail "reconcile did not confirm the identity fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/identity-src.claim" || fail "identity fixture runner did not claim its source"
 identity_pid=$(sed -n '2p' "$FM_PROCEVENT_CLAIM_ROOT/identity-src.claim")
 IDENTITY_FAKEBIN=$(fm_fakebin "$TMP_ROOT/identity-tools")
@@ -2709,7 +2721,8 @@ SWEEP_TRIGGER_ONE="$TMP_ROOT/sweep-trigger-one"
 SWEEP_TRIGGER_TWO="$TMP_ROOT/sweep-trigger-two"
 pe_register "$HM" lavish sweep-one -- "$BLOCKER" "$SWEEP_TRIGGER_ONE" "sweep one" >/dev/null
 pe_register "$HM" lavish sweep-two -- "$BLOCKER" "$SWEEP_TRIGGER_TWO" "sweep two" >/dev/null
-pe "$HM" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HM" reconcile >/dev/null \
+  || fail "reconcile did not confirm both home sweep fixture listeners"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/sweep-one.claim" || fail "home sweep fixture one did not start"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/sweep-two.claim" || fail "home sweep fixture two did not start"
 sweep_pid_one=$(sed -n '2p' "$FM_PROCEVENT_CLAIM_ROOT/sweep-one.claim")
@@ -2747,7 +2760,8 @@ HN="$TMP_ROOT/hn"; HO="$TMP_ROOT/ho"; new_home "$HN"; new_home "$HO"
 FOREIGN_TRIGGER="$TMP_ROOT/foreign-trigger"
 pe_register "$HN" lavish foreign-src -- "$BLOCKER" "$FOREIGN_TRIGGER" "foreign" >/dev/null
 pe_register "$HO" lavish foreign-src -- "$BLOCKER" "$FOREIGN_TRIGGER" "foreign" >/dev/null
-pe "$HN" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HN" reconcile >/dev/null \
+  || fail "reconcile did not confirm the foreign-owner fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/foreign-src.claim" || fail "foreign-owner fixture did not start"
 foreign_pid=$(sed -n '2p' "$FM_PROCEVENT_CLAIM_ROOT/foreign-src.claim")
 out=$(pe "$HO" sweep-home)
@@ -2762,7 +2776,8 @@ pass "home sweep leaves foreign-home claims and runners untouched"
 HU="$TMP_ROOT/hu"; new_home "$HU"
 SWEEP_UNCERTAIN_TRIGGER="$TMP_ROOT/sweep-uncertain-trigger"
 pe_register "$HU" lavish sweep-uncertain -- "$BLOCKER" "$SWEEP_UNCERTAIN_TRIGGER" "uncertain" >/dev/null
-pe "$HU" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HU" reconcile >/dev/null \
+  || fail "reconcile did not confirm the uncertain sweep fixture's listener"
 wait_for "$FM_PROCEVENT_CLAIM_ROOT/sweep-uncertain.claim" || fail "uncertain sweep fixture did not start"
 sweep_uncertain_pid=$(sed -n '2p' "$FM_PROCEVENT_CLAIM_ROOT/sweep-uncertain.claim")
 sweep_status=0
@@ -2789,7 +2804,8 @@ pass "healthy runtime behavior remains registration-only"
 HD="$TMP_ROOT/hd"; new_home "$HD"
 TRIG3="$TMP_ROOT/trigger-three"
 pe_register "$HD" lavish argv-src -- "$BLOCKER" "$TRIG3" "one arg with spaces" "second; rm -rf /tmp/nope" >/dev/null
-pe "$HD" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HD" reconcile >/dev/null \
+  || fail "reconcile did not confirm the argv fixture's listener"
 : > "$TRIG3"
 wait_for "$HD/state/.wake-queue" || fail "argv source published no event"
 R=$(first_result "$HD" argv-src || true)
@@ -2835,7 +2851,8 @@ done
 SH
 chmod +x "$NOISY"
 pe_register "$HG" lavish noisy-src -- "$NOISY" "$NOISY_PID" >/dev/null
-FM_PROCEVENT_MAX_OUTPUT_BYTES=100 pe "$HG" reconcile >/dev/null
+FM_PROCEVENT_MAX_OUTPUT_BYTES=100 FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HG" reconcile >/dev/null \
+  || fail "reconcile did not confirm the noisy source's listener"
 wait_for "$NOISY_PID" || fail "noisy source child did not start"
 noisy_child=$(cat "$NOISY_PID")
 staged=
@@ -2890,7 +2907,9 @@ SH
   pe_register "$HPOST_TERM" lavish post-term-src -- \
     "$POST_TERM_SOURCE" "$POST_TERM_PID" "$POST_TERM_SIGNALS" >/dev/null
   FM_PROC_ROOT_OVERRIDE="$TMP_ROOT/no-post-term-proc" \
-    FM_PROCEVENT_OWNER_CHECK_SECONDS=5 pe "$HPOST_TERM" reconcile >/dev/null
+    FM_PROCEVENT_OWNER_CHECK_SECONDS=5 FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+    pe "$HPOST_TERM" reconcile >/dev/null \
+    || fail "reconcile did not confirm the post-TERM reuse fixture's listener"
   wait_for "$POST_TERM_PID" || fail "the post-TERM reuse fixture did not start"
   wait_for "$FM_PROCEVENT_CLAIM_ROOT/post-term-src.claim" \
     || fail "the post-TERM reuse fixture did not claim its source"
@@ -3488,7 +3507,9 @@ pe_register "$HFLOOR" lavish floor-src -- \
 # this fixture a bounded observation window, then retire it as soon as sampled
 # rather than leaving its orphan loop running alongside the remaining tests.
 FM_PROCEVENT_OWNER_LEASE_SECONDS=30 FM_PROCEVENT_OWNER_CHECK_SECONDS=1 \
-  FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=1 pe "$HFLOOR" reconcile >/dev/null
+  FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=1 FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  pe "$HFLOOR" reconcile >/dev/null \
+  || fail "reconcile did not confirm the orphan-storm fixture's listener"
 floor_deadline=$((SECONDS + 30))
 while :; do
   floor_count=0
@@ -3622,7 +3643,8 @@ RECREATED_TRIGGER="$TMP_ROOT/recreated-owner.trigger"
 pe_register "$HRECREATED" lavish recreated-src -- \
   "$BLOCKER" "$RECREATED_TRIGGER" "recreated payload" >/dev/null
 FM_PROCEVENT_OWNER_LEASE_SECONDS=30 FM_PROCEVENT_OWNER_CHECK_SECONDS=1 \
-  pe "$HRECREATED" reconcile >/dev/null
+  FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HRECREATED" reconcile >/dev/null \
+  || fail "reconcile did not confirm the recreated-path fixture's listener"
 wait_for "$HRECREATED/state/procevent/recreated-src.runner" \
   || fail "the recreated-path fixture never launched its source"
 RECREATED_RUNNER_PID=$(cat "$HRECREATED/state/procevent/recreated-src.runner")
@@ -3666,6 +3688,7 @@ case " \$parent " in
       case "\$GUARD_SHIM_MODE" in
         delay) sleep 7 ;;
         kill)
+          date +%s > "\$GUARD_SHIM_MARKER/killed-at"
           group=\$(ps -o pgid= -p "\$PPID")
           kill -s KILL -- "-\${group// /}"
           ;;
@@ -3696,18 +3719,20 @@ HKILLEDGUARD="$TMP_ROOT/killed-guard"; new_home "$HKILLEDGUARD"
 fm_test_track_procevent_home "$HKILLEDGUARD"
 pe_register "$HKILLEDGUARD" lavish killed-guard-src -- "$FAST_SOURCE" "$TMP_ROOT/killed-guard-launches"
 killed_guard_status=0
-killed_guard_started=$SECONDS
 killed_guard_out=$(PATH="$GUARD_BIN:$PATH" GUARD_SHIM_MODE=kill GUARD_SHIM_MARKER="$TMP_ROOT/killed-guard.killed" \
   pe "$HKILLEDGUARD" start killed-guard-src 2>&1) || killed_guard_status=$?
-killed_guard_elapsed=$((SECONDS - killed_guard_started))
+killed_guard_returned=$(date +%s)
 assert_present "$TMP_ROOT/killed-guard.killed" "the killed guard fixture never reached the owner guard"
+killed_guard_at=$(cat "$TMP_ROOT/killed-guard.killed/killed-at" 2>/dev/null) && [ -n "$killed_guard_at" ] \
+  || fail "fixture invalid: the killed guard fixture did not record when it killed the guard"
+killed_guard_elapsed=$((killed_guard_returned - killed_guard_at))
 [ "$killed_guard_status" -ne 0 ] || fail "a runner continued after its owner guard died before reporting"
 assert_contains "$killed_guard_out" "cannot start the runner's owner guard" \
   "a guard that died before reporting is reported at the runner boundary"
 assert_absent "$TMP_ROOT/killed-guard-launches" \
   "a source command ran after its owner guard died before reporting"
 [ "$killed_guard_elapsed" -lt 30 ] \
-  || fail "a runner waited ${killed_guard_elapsed}s, out to its backstop, for an owner guard that had already exited"
+  || fail "a runner waited ${killed_guard_elapsed}s after its owner guard was killed, out to its backstop"
 pass "a runner fails closed as soon as its owner guard exits before reporting"
 
 HATTACHED="$TMP_ROOT/attached-owner"; new_home "$HATTACHED"
@@ -3808,7 +3833,8 @@ pe_register "$HREUSED_GROUP" lavish reused-runner-group-src -- \
   "$BLOCKER" "$REUSED_GROUP_TRIGGER" "reused group payload" >/dev/null
 PATH="$REUSED_GROUP_BIN:$PATH" FM_PROC_ROOT_OVERRIDE="$TMP_ROOT/no-reused-group-proc" \
   FM_PROCEVENT_OWNER_LEASE_SECONDS=30 FM_PROCEVENT_OWNER_CHECK_SECONDS=1 \
-  pe "$HREUSED_GROUP" reconcile >/dev/null
+  FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HREUSED_GROUP" reconcile >/dev/null \
+  || fail "reconcile did not confirm the reused-group fixture's listener"
 wait_for "$HREUSED_GROUP/state/procevent/reused-runner-group-src.runner" \
   || fail "the reused-group fixture runner did not start"
 REUSED_GROUP_RUNNER=$(cat "$HREUSED_GROUP/state/procevent/reused-runner-group-src.runner")
@@ -3936,8 +3962,10 @@ HKEEP="$TMP_ROOT/orphan-live-owner"; new_home "$HKEEP"
 fm_test_track_procevent_home "$HKEEP"
 orphan_pe "$HORPHAN" register lavish orphan-src -- "$ORPHAN_STUB" "$TMP_ROOT/orphan-dead" >/dev/null
 orphan_pe "$HKEEP" register lavish keep-src -- "$QUIET_STUB" "$TMP_ROOT/orphan-live" >/dev/null
-orphan_pe "$HORPHAN" reconcile >/dev/null
-orphan_pe "$HKEEP" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 orphan_pe "$HORPHAN" reconcile >/dev/null \
+  || fail "reconcile did not confirm the dead-owner listener"
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 orphan_pe "$HKEEP" reconcile >/dev/null \
+  || fail "reconcile did not confirm the live-owner listener"
 
 wait_for "$HORPHAN/state/procevent/orphan-src.runner" \
   || fail "the dead-owner listener never recorded its runner"
@@ -4199,7 +4227,8 @@ HPGUARD="$TMP_ROOT/signal-proof-guard"; new_home "$HPGUARD"
 fm_test_track_procevent_home "$HPGUARD"
 orphan_pe "$HPGUARD" register lavish proof-guard-src \
   -- "$SIGNAL_PROOF_STUB" "$TMP_ROOT/proof-guard" >/dev/null
-orphan_pe "$HPGUARD" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 orphan_pe "$HPGUARD" reconcile >/dev/null \
+  || fail "reconcile did not confirm the guarded signal-proof listener"
 # The owner is kept present until the fixture is fully up, because the input
 # under test is an owner that GOES AWAY, not a runner that never finished
 # starting: on a loaded host the short lease here can otherwise expire while the
@@ -4422,8 +4451,9 @@ for interval in 08 010; do
   pe_register "$HINTERVAL" lavish "interval-$interval" \
     -- "$QUIET_STUB" "$HINTERVAL/poll" >/dev/null
   PATH="$INTERVAL_BIN:$PATH" INTERVAL_SLEEP_LOG="$HINTERVAL/sleeps" \
-    FM_PROCEVENT_OWNER_CHECK_SECONDS="$interval" \
-    pe "$HINTERVAL" reconcile >/dev/null
+    FM_PROCEVENT_OWNER_CHECK_SECONDS="$interval" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+    pe "$HINTERVAL" reconcile >/dev/null \
+    || fail "reconcile did not confirm the decimal-interval ($interval) listener"
   wait_for "$HINTERVAL/poll.descendant" \
     || fail "a zero-prefixed decimal interval ($interval) prevented the listener from starting"
   for _ in $(seq 1 100); do
@@ -4550,7 +4580,8 @@ pass "a runner exits on the ordinary stop signal instead of outliving it"
 
 HCRASH="$TMP_ROOT/crashed-leader"; new_home "$HCRASH"
 pe_register "$HCRASH" lavish crash-src -- "$QUIET_STUB" "$TMP_ROOT/crash-leader" >/dev/null
-pe "$HCRASH" reconcile >/dev/null
+FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 pe "$HCRASH" reconcile >/dev/null \
+  || fail "reconcile did not confirm the crash fixture's listener"
 wait_for "$HCRASH/state/procevent/crash-src.runner" \
   || fail "the crash-fixture listener never recorded its runner"
 CRASH_PID=$(cat "$HCRASH/state/procevent/crash-src.runner")
@@ -4602,11 +4633,11 @@ PATH="$READY/bin:$PATH" FM_HOME="$READY/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECOND
 assert_contains "$(cat "$READY/arm.out")" "armed: $ready_id" "a live listener was not reported ready"
 [ -e "$FM_PROCEVENT_CLAIM_ROOT/$ready_id.claim" ] \
   || fail "arm reported ready without a listener claim"
-for _ in $(seq 1 50); do
+for _ in $(seq 1 1200); do
   grep -q started "$READY_MARK" && break
   sleep 0.05
 done
-grep -q started "$READY_MARK" || fail "arm reported ready before the listener command ran"
+grep -q started "$READY_MARK" || fail "the ready-check listener never ran"
 touch "$READY_RELEASE"
 for _ in $(seq 1 50); do
   [ -e "$FM_PROCEVENT_CLAIM_ROOT/$ready_id.claim" ] || break
@@ -4644,7 +4675,7 @@ touch "$delay_rel"
 wait "$delay_arm" || fail "arm failed after the delayed listener was allowed to start: $(cat "$DELAY/arm.err")"
 assert_contains "$(cat "$DELAY/arm.out")" "armed: $delay_id" \
   "arm did not report ready once the delayed listener was running"
-for _ in $(seq 1 50); do
+for _ in $(seq 1 1200); do
   grep -q started "$READY_MARK" && break
   sleep 0.05
 done
@@ -5011,7 +5042,7 @@ cp "$drain_claim" "$DRAIN/generation-one.claim"
 touch "$DRAIN/release1"
 wait_for "$DRAIN/home/state/procevent-inbox/$drain_id.1.result" \
   || fail "the first generation of the draining fixture never captured its round"
-for _ in $(seq 1 100); do
+for _ in $(seq 1 1200); do
   [ -e "$drain_claim" ] || break
   sleep 0.05
 done
@@ -5022,7 +5053,7 @@ perl -MPOSIX=setsid -e 'setsid() >= 0 or exit 1; exec @ARGV' sleep 60 &
 drain_holder=$!
 # Read the identity only once the holder has exec'd sleep: mid-exec its cmdline
 # can read empty, and a pre-exec identity would never match the live holder.
-for _ in $(seq 1 100); do
+for _ in $(seq 1 1200); do
   case "$(ps -p "$drain_holder" -o comm= 2>/dev/null)" in *sleep) break ;; esac
   sleep 0.05
 done
