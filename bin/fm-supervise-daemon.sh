@@ -714,18 +714,20 @@ pane_is_busy() {  # <target> [backend]
   return 1
 }
 
-# Resolve the primary version only when a busy deferral needs diagnostics.
-# Do not run an unrecognized executable inferred from a pane's process name.
-fm_daemon_primary_version() {
-  local harness=$1 version
-  case "$harness" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|omp|muse|gemini|rovo|agy|devin)
-      version=$("$harness" --version 2>/dev/null | head -1) || version=
-      version=${version//[$'\r\n']/ }
-      printf '%s' "${version:-unavailable}"
-      ;;
-    *) printf 'unavailable' ;;
+# Resolve the primary harness and its CLI version once, at daemon start, in the
+# daemon's own shell so busy deferrals reuse both. The version is the binary on
+# the daemon's PATH at start, which can lag a primary that auto-updated later.
+# Only a known harness CLI is run, bounded and detached from stdin.
+fm_daemon_resolve_primary() {
+  local bin='' version=''
+  fm_daemon_primary_harness >/dev/null
+  case "$FM_DAEMON_PRIMARY_HARNESS" in
+    cursor) bin='cursor-agent' ;;
+    claude|codex|opencode|pi|pi-signed|grok|kimi|omp|muse|gemini|rovo|agy|devin) bin=$FM_DAEMON_PRIMARY_HARNESS ;;
   esac
+  [ -z "$bin" ] || version=$(fm_run_timed 5 "$bin" --version 2>/dev/null </dev/null | head -1)
+  version=${version//[$'\r\n']/}
+  FM_DAEMON_PRIMARY_VERSION=${version:-unavailable}
 }
 
 # pane_input_pending dispatches through fm_backend_composer_state and treats
@@ -1469,7 +1471,7 @@ inject_msg() {  # <message> [state]
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then
     INJECT_LAST_FAILURE="deferred: supervisor pane busy (agent mid-turn)"
-    log "inject $INJECT_LAST_FAILURE (source=${PANE_BUSY_SOURCE:-unavailable}, backend=$backend, harness=$(fm_daemon_primary_harness), version=$(fm_daemon_primary_version "$(fm_daemon_primary_harness)"))"
+    log "inject $INJECT_LAST_FAILURE (source=${PANE_BUSY_SOURCE:-unavailable}, backend=$backend, harness=$(fm_daemon_primary_harness), version_at_daemon_start=${FM_DAEMON_PRIMARY_VERSION:-unavailable})"
     return 1
   fi
   #   b) Composer-guard: inject ONLY into a confirmed-empty GENUINE agent
@@ -1882,6 +1884,8 @@ fm_super_main() {
     rm -f "$PIDFILE" 2>/dev/null || true
     exit 1
   fi
+
+  fm_daemon_resolve_primary
 
   local afk_status="off"
   afk_active "$STATE" && afk_status="on"

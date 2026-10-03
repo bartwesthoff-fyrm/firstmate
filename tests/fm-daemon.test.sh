@@ -3029,7 +3029,7 @@ test_primary_busy_source_with_live_processes() {
     printf '%s' "$idle" | fm_busy_lines_match claude && fail "background shell accidentally rendered a Claude busy signal"
     printf '%s' "$busy" | fm_busy_lines_match claude || fail "rendered pane did not render a Claude busy signal"
     fm_backend_busy_state() { [ "$2" = source:0 ] && printf busy || printf idle; }
-    fm_daemon_primary_version() { printf '2.1.test'; }
+    FM_DAEMON_PRIMARY_VERSION=2.1.test
     FM_DAEMON_PRIMARY_HARNESS=claude
     pane_is_busy source:0 tmux || fail "native busy source lost with idle rendered pane"
     [ "$PANE_BUSY_SOURCE" = native ] || fail "native busy verdict was not attributed to native"
@@ -3037,14 +3037,58 @@ test_primary_busy_source_with_live_processes() {
     [ "$PANE_BUSY_SOURCE" = rendered ] || fail "rendered busy verdict was not attributed to rendered"
     LOG="$dir/daemon.log" FM_SUPERVISOR_TARGET=source:rendered FM_SUPERVISOR_BACKEND=tmux
     inject_msg 'escalation' "$state" && fail "a rendered-busy pane must defer injection"
-    assert_contains "$(<"$LOG")" 'source=rendered, backend=tmux, harness=claude, version=2.1.test' \
+    assert_contains "$(<"$LOG")" 'source=rendered, backend=tmux, harness=claude, version_at_daemon_start=2.1.test' \
       "deferred injection did not identify the rendered signal and harness version"
     FM_SUPERVISOR_TARGET=source:0
     inject_msg 'escalation' "$state" && fail "a native-busy pane must defer injection"
-    assert_contains "$(<"$LOG")" 'source=native, backend=tmux, harness=claude, version=2.1.test' \
+    assert_contains "$(<"$LOG")" 'source=native, backend=tmux, harness=claude, version_at_daemon_start=2.1.test' \
       "deferred injection did not identify the native signal and harness version"
   ) || fail "live-process busy-source subshell failed"
   pass "primary busy source: native and rendered signals remain independent and a deferral names the evidence"
+}
+
+test_primary_version_resolved_once_at_daemon_start() {
+  local dir state bin calls
+  dir=$(make_supercase primary-version-once)
+  state="$dir/state"
+  bin="$dir/harness-bin"
+  calls="$dir/version-calls"
+  mkdir -p "$bin"
+  cat > "$bin/cursor-agent" <<SH
+#!/usr/bin/env bash
+printf 'cursor-agent %s\n' "\$*" >> "$calls"
+printf '2026.09.01-test\nsecond line\n'
+SH
+  cat > "$bin/cursor" <<SH
+#!/usr/bin/env bash
+printf 'cursor %s\n' "\$*" >> "$calls"
+SH
+  cat > "$bin/claude" <<'SH'
+#!/usr/bin/env bash
+exec sleep 30
+SH
+  chmod +x "$bin/cursor-agent" "$bin/cursor" "$bin/claude"
+  afk_enter "$state"
+  (
+    fm_backend_busy_state() { printf busy; }
+    LOG="$dir/daemon.log" FM_SUPERVISOR_TARGET=fakepane FM_SUPERVISOR_BACKEND=tmux
+    FM_DAEMON_PRIMARY_HARNESS=cursor
+    PATH="$bin:$PATH" fm_daemon_resolve_primary
+    PATH="$dir/fakebin:$PATH" inject_msg 'escalation' "$state" && fail "a busy pane must defer injection"
+    PATH="$dir/fakebin:$PATH" inject_msg 'escalation' "$state" && fail "a busy pane must defer injection"
+    [ "$(grep -c 'harness=cursor, version_at_daemon_start=2026.09.01-test)' "$LOG")" = 2 ] \
+      || fail "busy deferrals did not reuse the cursor-agent version found at daemon start: $(<"$LOG")"
+    [ "$(<"$calls")" = 'cursor-agent --version' ] \
+      || fail "the cursor primary was not probed exactly once through cursor-agent: $(<"$calls")"
+    FM_DAEMON_PRIMARY_HARNESS=claude
+    SECONDS=0
+    PATH="$bin:$PATH" fm_daemon_resolve_primary
+    [ "$SECONDS" -lt 15 ] || fail "a hung --version stalled daemon start for ${SECONDS}s"
+    PATH="$dir/fakebin:$PATH" inject_msg 'escalation' "$state" && fail "a busy pane must defer injection"
+    assert_contains "$(<"$LOG")" 'harness=claude, version_at_daemon_start=unavailable)' \
+      "a hung --version was not reported as unavailable"
+  ) || fail "primary version subshell failed"
+  pass "primary version: probed once at daemon start through the harness CLI, bounded, and reused by every busy deferral"
 }
 
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted() {
@@ -3316,6 +3360,7 @@ test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
 test_pane_is_busy_herdr_native_busy_state
 test_primary_busy_source_with_live_processes
+test_primary_version_resolved_once_at_daemon_start
 test_primary_busy_guard_is_harness_scoped
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted
 test_pane_input_pending_herdr_dispatch

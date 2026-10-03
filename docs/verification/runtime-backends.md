@@ -1235,8 +1235,10 @@ Measured 2026-10-03 against Claude Code 2.1.288 and Herdr 0.9.1 in a named isola
 A tracked background Bash `sleep` remained running after Claude's reply, while `agent get` reported `idle`, the rendered tail showed `1 shell still running`, and `pane_is_busy` reported idle.
 After another one-line reply it still reported idle; during a real foreground Bash turn it reported busy.
 The overnight false-positive root cause remains unverified: the lab did not reproduce a busy verdict on an idle Claude pane, and the date-change reminder was not reproduced.
-The daemon now records `source=native` or `source=rendered` with backend, harness, and version on the existing busy-deferral log line, so a recurrence can identify the deciding signal without changing its safety posture.
-`tests/fm-daemon.test.sh` pins divergent native and rendered signals with real tmux shell processes, and the prompt-submitting guard refreshes the live claim:
+The daemon now records `source=native` or `source=rendered` with backend, harness, and `version_at_daemon_start` on the existing busy-deferral log line, so a recurrence can identify the deciding signal without changing its safety posture.
+That version is what the harness CLI on the daemon's PATH reported once at daemon start, so it can lag a primary that auto-updated later.
+`tests/fm-daemon.test.sh` pins the source attribution with a stubbed native verdict and real tmux-rendered panes, and the start-time version probe with stub CLIs.
+The prompt-submitting guard re-checks the live `pane_is_busy` verdicts: idle beside a tracked background task and after a one-line reply, busy during a foreground Bash turn:
 
 ```sh
 FM_AFK_CLAUDE_BUSY_LIVE=1 tests/fm-afk-claude-busy-live-e2e.test.sh

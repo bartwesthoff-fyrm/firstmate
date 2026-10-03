@@ -157,6 +157,13 @@ fi
 exec "$REAL_TMUX" -L "$SOCKET" "\$@"
 SHIM
 chmod +x "$TMUX_SHIM_DIR/tmux"
+# The daemon runs its pinned primary's --version once at start; this stub keeps
+# the claude-pinned scenario from launching the host's Claude Code.
+cat > "$TMUX_SHIM_DIR/claude" <<'SHIM'
+#!/usr/bin/env bash
+printf '0.0.0-test (stub)\n'
+SHIM
+chmod +x "$TMUX_SHIM_DIR/claude"
 
 # Create a fake crewmate window (the watcher lists fm-* windows for stale
 # detection). The pane is an inert shell - it just needs to exist.
