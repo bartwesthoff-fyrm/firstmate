@@ -43,8 +43,9 @@ Every path that provisions or launches one refuses a host that is not ready for 
 
 - On every call, it also disables agent forwarding, forwarding setup, and configured `SendEnv` patterns.
 - It arms bounded SSH dead-peer detection, so a vanished host (a reboot, a dropped link) fails within a bounded window instead of hanging indefinitely.
+- The watcher's own remote reads and the parent's reply listener also bound the whole exchange, including a connect timeout, so an overloaded host that stalls the SSH banner or the command reads as unreachable (exit 255) instead of stalling local supervision; other callers' long remote jobs are not cut short.
 
-Its [script header](../bin/fm-on.sh) owns the keepalive defaults and environment overrides.
+Its [script header](../bin/fm-on.sh) owns the keepalive defaults, environment overrides, and deadline behavior.
 
 ### Remote clone and entrypoint
 
