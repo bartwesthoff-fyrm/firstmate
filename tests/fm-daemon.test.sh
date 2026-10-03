@@ -3020,7 +3020,16 @@ test_primary_busy_source_with_live_processes() {
       'printf "✢ Pollinating… (16s · thought for 1s)\n"; exec sleep 30' || exit 1
     # The shell and its background process are alive while their rendered pane
     # has no busy footer. The second pane has a busy footer while native is idle.
-    sleep 0.3
+    wait_for_pane_text() {  # <target> <text>
+      local i=0
+      until tmux capture-pane -p -t "$1" -S -40 | grep -qF "$2"; do
+        [ "$i" -lt 50 ] || return 1
+        sleep 0.1
+        i=$((i + 1))
+      done
+    }
+    wait_for_pane_text source:0 '1 shell still running' || fail "background pane did not render its output"
+    wait_for_pane_text source:rendered 'Pollinating' || fail "rendered pane did not render its busy footer"
     [ "$(tmux display-message -p -t source:0 '#{pane_dead}')" = 0 ] || fail "background pane died"
     [ "$(tmux display-message -p -t source:rendered '#{pane_dead}')" = 0 ] || fail "rendered pane died"
     local idle busy
