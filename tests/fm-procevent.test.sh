@@ -818,8 +818,10 @@ new_task_endpoint "$HMULTI" worker-2
 mkdir -p "$HMULTI/config"
 printf 'wrong-server.example\n' > "$HMULTI/config/lavish-axi-host"
 PATH="$MULTI_BIN:$PATH" LAVISH_AXI_HOST=arming.example LAVISH_AXI_PORT=24387 FM_HOME="$HMULTI" \
+  FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$MULTI_ART" --for worker-1 \
-  --agent-reply-file "$MULTI_ROOT/reply1" >/dev/null
+  --agent-reply-file "$MULTI_ROOT/reply1" >/dev/null \
+  || fail "arm did not establish the worker-owned multi-round listener"
 if PATH="$MULTI_BIN:$PATH" FM_HOME="$HMULTI" \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$MULTI_ART" >/dev/null 2>"$MULTI_ROOT/firstmate-arm.err"; then
   fail "firstmate arm replaced a worker-owned board"
@@ -873,9 +875,10 @@ assert_contains "$(cat "$MULTI_ROOT/open-firstmate.err")" "owned by task worker-
 [ ! -e "$HMULTI/state/worker-2.inbox" ] \
   || fail "a refused sibling registration took delivery of the owner's feedback"
 
-PATH="$MULTI_BIN:$PATH" FM_HOME="$HMULTI" \
+PATH="$MULTI_BIN:$PATH" FM_HOME="$HMULTI" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$MULTI_ART" --for worker-1 \
-  --agent-reply-file "$MULTI_ROOT/reply2" >/dev/null
+  --agent-reply-file "$MULTI_ROOT/reply2" >/dev/null \
+  || fail "the re-arm acknowledging the first round did not establish its listener"
 wait "$MULTI_RUN" || true
 for _ in $(seq 1 100); do
   PATH="$MULTI_BIN:$PATH" pe "$HMULTI" reconcile >/dev/null 2>&1 || true
@@ -886,9 +889,10 @@ touch "$MULTI_ROOT/trigger2"
 for _ in $(seq 1 100); do [ -f "$HMULTI/state/worker-1.inbox/002.msg" ] && break; sleep 0.02; done
 [ -f "$HMULTI/state/worker-1.inbox/002.msg" ] \
   || fail "the next worker-owned feedback did not reach the worker inbox"
-PATH="$MULTI_BIN:$PATH" FM_HOME="$HMULTI" \
+PATH="$MULTI_BIN:$PATH" FM_HOME="$HMULTI" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$MULTI_ART" --for worker-1 \
-  --agent-reply-file "$MULTI_ROOT/reply3" >/dev/null
+  --agent-reply-file "$MULTI_ROOT/reply3" >/dev/null \
+  || fail "the re-arm acknowledging the second round did not establish its listener"
 for _ in $(seq 1 100); do
   PATH="$MULTI_BIN:$PATH" pe "$HMULTI" reconcile >/dev/null 2>&1 || true
   [ "$(cat "$MULTI_ROOT/count" 2>/dev/null || true)" = 3 ] && break
@@ -986,8 +990,9 @@ lavish_session "$ORPHAN_ART"
 orphan_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$ORPHAN_ART")
 fm_test_track_procevent_home "$HORPHAN"
 new_task_endpoint "$HORPHAN" worker-4
-PATH="$ORPHAN_BIN:$PATH" FM_HOME="$HORPHAN" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ORPHAN_ART" --for worker-4 >/dev/null
+PATH="$ORPHAN_BIN:$PATH" FM_HOME="$HORPHAN" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ORPHAN_ART" --for worker-4 >/dev/null \
+  || fail "arm did not establish the interrupted-capture listener"
 (umask 077; mkdir -p "$HORPHAN/state/procevent-inbox")
 chmod 0700 "$HORPHAN/state/procevent-inbox"
 printf 'worker-4\n' > "$HORPHAN/state/procevent-inbox/$orphan_id.1.owner-task"
@@ -1022,8 +1027,9 @@ lavish_session "$ADOPT_ART"
 adopt_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$ADOPT_ART")
 fm_test_track_procevent_home "$HADOPT"
 new_task_endpoint "$HADOPT" worker-5
-PATH="$ADOPT_BIN:$PATH" FM_HOME="$HADOPT" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ADOPT_ART" >/dev/null
+PATH="$ADOPT_BIN:$PATH" FM_HOME="$HADOPT" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ADOPT_ART" >/dev/null \
+  || fail "arm did not establish the firstmate fixture listener"
 wait_capture "$HADOPT" "$adopt_id" \
   || fail "the firstmate fixture capture never landed"
 [ -f "$HADOPT/state/procevent-inbox/$adopt_id.1.result" ] \
@@ -1065,8 +1071,9 @@ assert_contains "$(cat "$TMP_ROOT/nometa-arm.err")" "worker-10" \
 [ ! -e "$HNOMETA/state/procevent/$nometa_id.source" ] \
   || fail "a board armed for an unreachable owner still published its registration"
 new_task_endpoint "$HNOMETA" worker-10
-PATH="$ADOPT_BIN:$PATH" FM_HOME="$HNOMETA" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$NOMETA_ART" --for worker-10 >/dev/null
+PATH="$ADOPT_BIN:$PATH" FM_HOME="$HNOMETA" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$NOMETA_ART" --for worker-10 >/dev/null \
+  || fail "arm did not establish the listener for a task that does have an endpoint"
 [ -e "$HNOMETA/state/procevent/$nometa_id.source" ] \
   || fail "a board was refused for a task that does have an endpoint"
 pass "a worker-owned board is only armed for an owner its feedback can reach"
@@ -1118,7 +1125,9 @@ fm_test_track_procevent_home "$HREDELIVER"
 new_task_endpoint "$HREDELIVER" worker-6
 RING_LOG="$TMP_ROOT/redeliver-ring.log"; : > "$RING_LOG"
 PATH="$RING_BIN:$ADOPT_BIN:$PATH" FM_SEND_LOG="$RING_LOG" FM_HOME="$HREDELIVER" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$REDELIVER_ART" --for worker-6 >/dev/null
+  FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$REDELIVER_ART" --for worker-6 >/dev/null \
+  || fail "arm did not establish the redelivery listener"
 wait_capture "$HREDELIVER" "$redeliver_id" \
   || fail "the first worker-owned round was never captured"
 [ -f "$HREDELIVER/state/worker-6.inbox/001.msg" ] \
@@ -1170,8 +1179,9 @@ lavish_session "$CONC_ART"
 conc_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$CONC_ART")
 fm_test_track_procevent_home "$HCONC"
 new_task_endpoint "$HCONC" worker-7
-PATH="$CONC_BIN:$PATH" FM_HOME="$HCONC" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$CONC_ART" --for worker-7 >/dev/null
+PATH="$CONC_BIN:$PATH" FM_HOME="$HCONC" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$CONC_ART" --for worker-7 >/dev/null \
+  || fail "arm did not establish the terminal-round listener"
 wait_capture "$HCONC" "$conc_id" \
   || fail "the terminal worker-owned round never landed"
 [ -f "$HCONC/state/procevent-inbox/$conc_id.1.result" ] \
@@ -1193,8 +1203,9 @@ assert_contains "$conclude_out" "retired: $conc_id" \
   "acknowledging the terminal round did not report the board retired"
 [ ! -e "$HCONC/state/procevent/$conc_id.source" ] \
   || fail "acknowledging the terminal round did not retire the worker-owned board"
-PATH="$CONC_BIN:$PATH" FM_HOME="$HCONC" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$CONC_ART" --for worker-7 >/dev/null
+PATH="$CONC_BIN:$PATH" FM_HOME="$HCONC" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$CONC_ART" --for worker-7 >/dev/null \
+  || fail "arm did not establish the board armed after the concluded round"
 repeat_out=$(PATH="$CONC_BIN:$PATH" pe "$HCONC" handled "$conc_id" 1)
 assert_contains "$repeat_out" "already-handled: $conc_id 1" \
   "repeating a closed acknowledgement did not report it as already handled"
@@ -1225,8 +1236,9 @@ lavish_session "$INTR_ART"
 intr_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$INTR_ART")
 fm_test_track_procevent_home "$HINTR"
 new_task_endpoint "$HINTR" worker-12
-PATH="$INTR_BIN:$PATH" FM_HOME="$HINTR" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$INTR_ART" --for worker-12 >/dev/null
+PATH="$INTR_BIN:$PATH" FM_HOME="$HINTR" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$INTR_ART" --for worker-12 >/dev/null \
+  || fail "arm did not establish the interrupted-conclude listener"
 wait_capture "$HINTR" "$intr_id" \
   || fail "the terminal worker-owned round was never captured"
 [ "$(cat "$INTR_ROOT/count" 2>/dev/null || echo 0)" = 1 ] \
@@ -1272,9 +1284,10 @@ fm_test_track_procevent_home "$HROLL"
 new_task_endpoint "$HROLL" worker-8
 printf 'reply from generation one\n' > "$ROLL_ROOT/reply1"
 printf 'reply from generation two\n' > "$ROLL_ROOT/reply2"
-PATH="$ROLL_BIN:$PATH" FM_HOME="$HROLL" \
+PATH="$ROLL_BIN:$PATH" FM_HOME="$HROLL" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$ROLL_ART" --for worker-8 \
-  --agent-reply-file "$ROLL_ROOT/reply1" >/dev/null
+  --agent-reply-file "$ROLL_ROOT/reply1" >/dev/null \
+  || fail "arm did not establish the first rollback generation's listener"
 wait_for "$ROLL_ROOT/replies" \
   || fail "the first generation's reply never reached the board"
 [ "$(grep -c 'generation one' "$ROLL_ROOT/replies" 2>/dev/null || true)" = 1 ] \
@@ -1297,9 +1310,10 @@ cmp -s "$ROLL_ROOT/generation-one.source" "$HROLL/state/procevent/$roll_id.sourc
   || fail "a failed re-arm replaced the generation the board is still running"
 [ ! -f "$HROLL/state/procevent-inbox/$roll_id.1.handled" ] \
   || fail "a failed re-arm still acknowledged the round it could not close"
-PATH="$ROLL_BIN:$PATH" FM_HOME="$HROLL" \
+PATH="$ROLL_BIN:$PATH" FM_HOME="$HROLL" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$ROLL_ART" --for worker-8 \
-  --agent-reply-file "$ROLL_ROOT/reply2" >/dev/null
+  --agent-reply-file "$ROLL_ROOT/reply2" >/dev/null \
+  || fail "the retried re-arm did not establish its listener"
 wait_for_lines "$ROLL_ROOT/replies" 2 \
   || fail "the retried re-arm did not hand the board its generation's reply exactly once"
 [ "$(grep -c 'generation two' "$ROLL_ROOT/replies" 2>/dev/null || true)" = 1 ] \
@@ -1331,9 +1345,10 @@ fm_test_track_procevent_home "$HREARM"
 new_task_endpoint "$HREARM" worker-11
 printf 'first generation reply\n' > "$REARM_ROOT/reply1"
 printf 'second generation reply\n' > "$REARM_ROOT/reply2"
-PATH="$REARM_BIN:$PATH" FM_HOME="$HREARM" \
+PATH="$REARM_BIN:$PATH" FM_HOME="$HREARM" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$REARM_ART" --for worker-11 \
-  --agent-reply-file "$REARM_ROOT/reply1" >/dev/null
+  --agent-reply-file "$REARM_ROOT/reply1" >/dev/null \
+  || fail "the initial arm of a worker-owned board did not establish its listener"
 [ -e "$HREARM/state/procevent/$rearm_id.source" ] \
   || fail "the initial arm of a worker-owned board did not register it"
 if PATH="$REARM_BIN:$PATH" FM_HOME="$HREARM" \
@@ -1359,9 +1374,10 @@ if PATH="$REARM_BIN:$PATH" FM_HOME="$HREARM" \
 fi
 [ ! -f "$HREARM/state/procevent-inbox/$rearm_id.1.handled" ] \
   || fail "a re-arm refused over its reply path still acknowledged the open round"
-PATH="$REARM_BIN:$PATH" FM_HOME="$HREARM" \
+PATH="$REARM_BIN:$PATH" FM_HOME="$HREARM" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$REARM_ART" --for worker-11 \
-  --agent-reply-file "$REARM_ROOT/reply2" >/dev/null
+  --agent-reply-file "$REARM_ROOT/reply2" >/dev/null \
+  || fail "re-arming over an open round did not establish its listener"
 [ -f "$HREARM/state/procevent-inbox/$rearm_id.1.handled" ] \
   || fail "re-arming over an open round did not acknowledge that round"
 wait_for_lines "$REARM_ROOT/replies" 2 \
@@ -2287,6 +2303,14 @@ awk '/^argv:$/ { print; exit } { print }' "$EP_SOURCE" > "$TMP_ROOT/episode-bad.
   || fail "could not prepare the damaged episode registration"
 ep_damage() { cat "$TMP_ROOT/episode-bad.source" > "$EP_SOURCE"; }
 ep_repair() { cat "$TMP_ROOT/episode-good.source" > "$EP_SOURCE"; }
+# Damage and repair rewrite the registration in place, so its identity never
+# changes. A runner reads it only once its own startup reaches the registration,
+# which a loaded host can delay past the cycle that launched it. A straggler from
+# a damaged cycle that reads the repaired file claims the source itself; the next
+# cycle then finds it owned and starts nothing (started=0 failed=0), and a
+# straggler from a repaired cycle does the same to the damaged cycle after it.
+# Each in-place rewrite therefore waits until no runner for this source is left,
+# so the runner that reads each state is always the one the next cycle launched.
 ep_runners_exited() {
   local _
   for _ in $(seq 1 600); do
@@ -2342,10 +2366,11 @@ ep_reconcile "failed=1" 1 "the second cycle stopped relaunching a source that ca
   || fail "the same failure episode was announced twice: $ep_out"
 ep_runners_exited || fail "the failed episode launches never exited"
 ep_repair
-# The two-second window above keeps the deliberately broken launches quick.
-# It cannot prove a repaired runner is broken when a loaded host merely delays
-# its claim beyond that operational deadline. Give the healthy launch enough
-# time to leave the observable claim or launch stamp before asserting success.
+# "A repaired source did not confirm" has two causes under load. A straggler
+# that claims first is ruled out by the barrier above. The other is the window:
+# two seconds keeps the deliberately broken launches quick, but a loaded host
+# can delay the repaired runner's own claim past it. Reconcile returns as soon
+# as the claim or launch stamp appears, so the long window only bounds that wait.
 ep_reconcile "started=1" 0 "a repaired source did not confirm" 30
 assert_contains "$ep_out" "failed=0" "a repaired source was still reported failed: $ep_out"
 [ "$(launch_failed_wake_count "$HEP" episode-src)" = 1 ] \
@@ -3627,6 +3652,64 @@ assert_absent "$TMP_ROOT/unguarded-launches" \
   "a source command ran without a successfully initialized owner guard"
 pass "a runner fails closed when its owner guard cannot initialize"
 
+# The owner guard reads the account id before it reports ready. This shim holds
+# up, or kills, only that read, and only the first time, so a test can stand in
+# for a loaded host that starts the guard late or loses it before it reports.
+GUARD_BIN=$(fm_fakebin "$TMP_ROOT/guard-start-bin")
+REAL_ID=$(command -v id) || fail "the guard startup fixture requires id"
+cat > "$GUARD_BIN/id" <<SH
+#!/usr/bin/env bash
+parent=\$(ps -o command= -p "\$PPID" 2>/dev/null) || parent=
+case " \$parent " in
+  *" _owner-watchdog "*)
+    if mkdir "\$GUARD_SHIM_MARKER" 2>/dev/null; then
+      case "\$GUARD_SHIM_MODE" in
+        delay) sleep 7 ;;
+        kill)
+          group=\$(ps -o pgid= -p "\$PPID")
+          kill -s KILL -- "-\${group// /}"
+          ;;
+      esac
+    fi
+    ;;
+esac
+exec "$REAL_ID" "\$@"
+SH
+chmod +x "$GUARD_BIN/id"
+
+HSLOWGUARD="$TMP_ROOT/slow-guard"; new_home "$HSLOWGUARD"
+fm_test_track_procevent_home "$HSLOWGUARD"
+SLOW_GUARD_TRIGGER="$TMP_ROOT/slow-guard.trigger"
+: > "$SLOW_GUARD_TRIGGER"
+pe_register "$HSLOWGUARD" lavish slow-guard-src -- "$BLOCKER" "$SLOW_GUARD_TRIGGER" "slow guard payload"
+slow_guard_status=0
+slow_guard_out=$(PATH="$GUARD_BIN:$PATH" GUARD_SHIM_MODE=delay GUARD_SHIM_MARKER="$TMP_ROOT/slow-guard.delayed" \
+  pe "$HSLOWGUARD" start slow-guard-src 2>&1) || slow_guard_status=$?
+assert_present "$TMP_ROOT/slow-guard.delayed" "the slow guard fixture never held up the owner guard"
+[ "$slow_guard_status" -eq 0 ] || fail "a runner gave up on an owner guard that was still starting: $slow_guard_out"
+assert_not_contains "$slow_guard_out" "cannot start the runner's owner guard" \
+  "a slow owner guard startup was reported as a guard failure"
+assert_contains "$slow_guard_out" "captured:" "the runner behind a slow owner guard did not capture its source"
+pass "a runner waits for an owner guard whose startup is slow"
+
+HKILLEDGUARD="$TMP_ROOT/killed-guard"; new_home "$HKILLEDGUARD"
+fm_test_track_procevent_home "$HKILLEDGUARD"
+pe_register "$HKILLEDGUARD" lavish killed-guard-src -- "$FAST_SOURCE" "$TMP_ROOT/killed-guard-launches"
+killed_guard_status=0
+killed_guard_started=$SECONDS
+killed_guard_out=$(PATH="$GUARD_BIN:$PATH" GUARD_SHIM_MODE=kill GUARD_SHIM_MARKER="$TMP_ROOT/killed-guard.killed" \
+  pe "$HKILLEDGUARD" start killed-guard-src 2>&1) || killed_guard_status=$?
+killed_guard_elapsed=$((SECONDS - killed_guard_started))
+assert_present "$TMP_ROOT/killed-guard.killed" "the killed guard fixture never reached the owner guard"
+[ "$killed_guard_status" -ne 0 ] || fail "a runner continued after its owner guard died before reporting"
+assert_contains "$killed_guard_out" "cannot start the runner's owner guard" \
+  "a guard that died before reporting is reported at the runner boundary"
+assert_absent "$TMP_ROOT/killed-guard-launches" \
+  "a source command ran after its owner guard died before reporting"
+[ "$killed_guard_elapsed" -lt 30 ] \
+  || fail "a runner waited ${killed_guard_elapsed}s, out to its backstop, for an owner guard that had already exited"
+pass "a runner fails closed as soon as its owner guard exits before reporting"
+
 HATTACHED="$TMP_ROOT/attached-owner"; new_home "$HATTACHED"
 fm_test_track_procevent_home "$HATTACHED"
 ATTACHED_TRIGGER="$TMP_ROOT/attached.trigger"
@@ -4513,8 +4596,9 @@ ready_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$ready_art")
 fm_test_track_procevent_home "$READY/home"
 export READY_MARK="$READY/mark" READY_RELEASE="$READY/release"
 : > "$READY_MARK"
-PATH="$READY/bin:$PATH" FM_HOME="$READY/home" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ready_art" > "$READY/arm.out"
+PATH="$READY/bin:$PATH" FM_HOME="$READY/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ready_art" > "$READY/arm.out" \
+  || fail "arm did not establish the ready-check listener"
 assert_contains "$(cat "$READY/arm.out")" "armed: $ready_id" "a live listener was not reported ready"
 [ -e "$FM_PROCEVENT_CLAIM_ROOT/$ready_id.claim" ] \
   || fail "arm reported ready without a listener claim"
@@ -4548,7 +4632,7 @@ delay_ready="$DELAY/lock-ready"
 delay_rel="$DELAY/lock-release"
 hold_source_lock "$delay_id" "$delay_ready" "$delay_rel"
 wait_for "$delay_ready" || fail "delayed-start fixture could not hold the source lock"
-PATH="$DELAY/bin:$PATH" FM_HOME="$DELAY/home" \
+PATH="$DELAY/bin:$PATH" FM_HOME="$DELAY/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$delay_art" > "$DELAY/arm.out" 2>"$DELAY/arm.err" &
 delay_arm=$!
 sleep 0.4
@@ -4638,8 +4722,9 @@ live_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$live_art")
 fm_test_track_procevent_home "$LIVE/home"
 export READY_MARK="$LIVE/mark" READY_RELEASE="$LIVE/release"
 : > "$READY_MARK"
-PATH="$LIVE/bin:$PATH" FM_HOME="$LIVE/home" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$live_art" > "$LIVE/arm1.out"
+PATH="$LIVE/bin:$PATH" FM_HOME="$LIVE/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$live_art" > "$LIVE/arm1.out" \
+  || fail "the first arm did not establish its listener"
 assert_contains "$(cat "$LIVE/arm1.out")" "armed: $live_id" "the first arm was not reported ready"
 wait_for_lines "$READY_MARK" 1 || fail "the first generation's listener never ran"
 set +e
@@ -4694,7 +4779,7 @@ legacy_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$legacy_art")
 fm_test_track_procevent_home "$LEGACY/home"
 new_task_endpoint "$LEGACY/home" worker-legacy
 printf 'legacy reply body\n' > "$LEGACY/reply-file"
-PATH="$LEGACY/bin:$PATH" FM_HOME="$LEGACY/home" \
+PATH="$LEGACY/bin:$PATH" FM_HOME="$LEGACY/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$legacy_art" --for worker-legacy \
   --agent-reply-file "$LEGACY/reply-file" >/dev/null \
   || fail "the older compatible Lavish reply path did not arm"
@@ -4750,7 +4835,7 @@ case "${1-}" in
   *) exit 2 ;;
 esac
 SH
-PATH="$REPLY_FAIL/bin:$PATH" FM_HOME="$REPLY_FAIL/home" \
+PATH="$REPLY_FAIL/bin:$PATH" FM_HOME="$REPLY_FAIL/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$reply_fail_art" --for worker-reply-fail \
   --agent-reply-file "$REPLY_FAIL/reply-file" >/dev/null \
   || fail "arm was not retryable with the same reply after Lavish refused it"
@@ -4912,7 +4997,7 @@ fm_test_track_procevent_home "$DRAIN/home"
 new_task_endpoint "$DRAIN/home" worker-drain
 printf 'first drain reply\n' > "$DRAIN/reply1"
 printf 'second drain reply\n' > "$DRAIN/reply2"
-PATH="$DRAIN/bin:$PATH" FM_HOME="$DRAIN/home" \
+PATH="$DRAIN/bin:$PATH" FM_HOME="$DRAIN/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$drain_art" --for worker-drain \
   --agent-reply-file "$DRAIN/reply1" >/dev/null \
   || fail "the first generation of the draining fixture did not arm"
@@ -4949,7 +5034,7 @@ awk -v pid="$drain_holder" -v ident="$drain_holder_identity" \
 chmod 0600 "$drain_claim"
 [ "$(pe "$DRAIN/home" list | awk -v id="$drain_id" '$1 == id { print $3 }')" = task:worker-drain/round-open ] \
   || fail "fixture invalid: the stood-up first generation is not reported live: $(pe "$DRAIN/home" list)"
-PATH="$DRAIN/bin:$PATH" FM_HOME="$DRAIN/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=5 \
+PATH="$DRAIN/bin:$PATH" FM_HOME="$DRAIN/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$drain_art" --for worker-drain \
   --agent-reply-file "$DRAIN/reply2" > "$DRAIN/arm2.out" 2> "$DRAIN/arm2.err" &
 drain_arm=$!
@@ -4984,8 +5069,9 @@ undisp_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$undisp_art")
 fm_test_track_procevent_home "$UNDISP/home"
 export READY_MARK="$UNDISP/mark" READY_RELEASE="$UNDISP/release"
 : > "$READY_MARK"
-PATH="$UNDISP/bin:$PATH" FM_HOME="$UNDISP/home" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$undisp_art" >/dev/null
+PATH="$UNDISP/bin:$PATH" FM_HOME="$UNDISP/home" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$undisp_art" >/dev/null \
+  || fail "the undisplaceable fixture's first arm did not establish its listener"
 wait_for_lines "$READY_MARK" 1 || fail "the undisplaceable fixture's listener never ran"
 undisp_claim="$FM_PROCEVENT_CLAIM_ROOT/$undisp_id.claim"
 undisp_identity=$(sed -n '4p' "$undisp_claim")
