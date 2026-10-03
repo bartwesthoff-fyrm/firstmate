@@ -43,9 +43,18 @@ run_watcher_once() {
   local state=$1 fakebin=$2 out=$3
   mkdir -p "$state"
   date '+%s' > "$state/.afk"
+  rm -f "$state/.last-check"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  wait_for_exit "$!" 50
+  local watcher_pid=$! i=0
+  # The watcher touches .last-check after startup reconciliation and immediately
+  # before its first status-signal scan; wait for that real readiness event.
+  while [ ! -e "$state/.last-check" ] && [ "$i" -lt 300 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -e "$state/.last-check" ] || { kill "$watcher_pid" 2>/dev/null || true; wait "$watcher_pid" 2>/dev/null || true; return 124; }
+  wait_for_exit "$watcher_pid" 50
 }
 
 ack_handled_wakes() {  # <state> <drain-stderr>
