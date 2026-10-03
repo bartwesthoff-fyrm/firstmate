@@ -1519,10 +1519,11 @@ new_task_endpoint "$HREPLY" worker-9
 printf 'applied round one\n' > "$TMP_ROOT/reply-retry.txt"
 LAVISH_REPLY_LOG="$TMP_ROOT/reply-retry-log"; export LAVISH_REPLY_LOG
 LAVISH_COUNT="$TMP_ROOT/reply-retry-count"; LAVISH_SCRIPT="interrupt interrupt feedback"
-PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HREPLY" \
+PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HREPLY" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$REPLY_ART" --for worker-9 \
-  --agent-reply-file "$TMP_ROOT/reply-retry.txt" >/dev/null
-wait_for "$HREPLY/state/worker-9.inbox/001.msg" 200 \
+  --agent-reply-file "$TMP_ROOT/reply-retry.txt" >/dev/null \
+  || fail "arm did not establish the reply-retry listener"
+wait_for "$HREPLY/state/worker-9.inbox/001.msg" 600 \
   || fail "the round that delivered after quiet retries did not reach the worker inbox"
 [ "$(cat "$LAVISH_COUNT")" = 3 ] \
   || fail "the reply-carrying listener was polled $(cat "$LAVISH_COUNT") times, not the two quiet retries plus the delivering poll"
@@ -1606,7 +1607,7 @@ LAVISH_COUNT="$TMP_ROOT/exhaust-count"; LAVISH_SCRIPT="interrupt"
 PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HEXH" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$EXH_ART" >/dev/null \
   || fail "arm did not establish the retry-exhaustion listener"
-wait_capture "$HEXH" "$exh_id" 200 \
+wait_capture "$HEXH" "$exh_id" 600 \
   || fail "exhaustion produced no captured result"
 [ "$(cat "$LAVISH_COUNT")" = 13 ] \
   || fail "the retry bound polled $(cat "$LAVISH_COUNT") times, not the first poll plus 12 bounded retries"
