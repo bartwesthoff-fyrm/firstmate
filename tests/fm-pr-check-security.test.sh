@@ -2166,23 +2166,28 @@ test_merged_poll_retires_once() {
 
 # A relaunched worker's record is rewritten by bin/fm-spawn.sh: every field it
 # owns first, then the preserved pr= identity block, then its
-# control_relaunch_tx= marker last. The parser used to reject ANY key following
-# pr=, so the watcher refused that task's authenticated merge poll before
-# execution on every cycle (seen 2026-09-27 against an already-recorded PR).
-# The known relaunch marker is accepted wherever it lands, while a malformed
-# marker value or an unknown key after pr= stays refused.
+# control_relaunch_tx= marker, and, with trace context on, its re-appended
+# traceparent= carrier last. The parser used to reject ANY key following pr=,
+# so the watcher refused that task's authenticated merge poll before execution
+# on every cycle (seen 2026-09-27 against an already-recorded PR). The known
+# relaunch fields are accepted wherever they land, while a malformed value of
+# either or an unknown key after pr= stays refused.
 test_relaunched_record_keeps_merge_poll_armed() {
-  local dir state url head tx rc mutation id n
+  local dir state url head tx tp rc mutation id n
   url=https://github.com/o/r/pull/1
   head=0123456789abcdef0123456789abcdef01234567
   tx=4242.20260927T093012Z.8123
+  tp=00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
 
-  # A malformed marker value, an empty marker, and an unknown key are each still
-  # refused after the recorded identity block.
+  # A malformed or empty marker or carrier, an all-zero carrier id, and an
+  # unknown key are each still refused after the recorded identity block.
   dir=$(make_case relaunched-record-refusals)
   state="$dir/home/state"
   n=0
-  for mutation in "control_relaunch_tx=4242-not-a-transaction" "control_relaunch_tx=" "harness=claude"; do
+  for mutation in "control_relaunch_tx=4242-not-a-transaction" "control_relaunch_tx=" \
+    "traceparent=00-0AF7651916CD43DD8448EB211C80319C-b7ad6b7169203331-01" "traceparent=" \
+    "traceparent=00-00000000000000000000000000000000-b7ad6b7169203331-01" \
+    "traceparent=00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01" "harness=claude"; do
     n=$((n + 1))
     id=reject-$n
     fm_write_meta "$state/$id.meta" \
@@ -2208,9 +2213,9 @@ test_relaunched_record_keeps_merge_poll_armed() {
 
   dir=$(make_case relaunched-record-merge-poll)
   state="$dir/home/state"
-  # The exact marker the relaunch path writes is accepted after pr_head=, and
-  # in any other position too, so a record order never decides whether the
-  # recorded PR can still be polled for its merge.
+  # The exact marker and carrier the relaunch path writes are accepted after
+  # pr_head=, and in any other position too, so a record order never decides
+  # whether the recorded PR can still be polled for its merge.
   fm_write_meta "$state/task-a.meta" \
     "window=fm-task-a" \
     "endpoint_task_id=task-a" \
@@ -2220,13 +2225,14 @@ test_relaunched_record_keeps_merge_poll_armed() {
     "mode=no-mistakes" \
     "pr=$url" \
     "pr_head=$head" \
-    "control_relaunch_tx=$tx"
+    "control_relaunch_tx=$tx" \
+    "traceparent=$tp"
   seed_canonical_poll "$dir" task-a "$url"
   fm_pr_metadata_identity_parse "$state/task-a.meta" \
-    || fail "a relaunch marker after pr_head= refused the recorded PR identity"
-  [ "$FM_PR_META_URL" = "$url" ] || fail "a relaunch marker changed the parsed PR URL"
+    || fail "relaunch fields after pr_head= refused the recorded PR identity"
+  [ "$FM_PR_META_URL" = "$url" ] || fail "relaunch fields changed the parsed PR URL"
   fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
-    || fail "a relaunch marker after pr_head= unauthenticated the armed merge poll"
+    || fail "relaunch fields after pr_head= unauthenticated the armed merge poll"
 
   add_stop_custom_check "$dir"
   set +e
