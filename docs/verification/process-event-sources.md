@@ -235,7 +235,7 @@ The owner-guard readiness wait is therefore kept because the review-round-five i
 ## Portability finding
 
 `setsid` is **not present on macOS**, so it cannot establish the runner's process group.
-Both direct `start` and `reconcile` use a Perl launcher that forks the runner, calls `setpgrp(0, 0)` in that child, marks the expected group leader, and then executes the private start path.
+Direct `start`, `reconcile`, and the runner's owner guard use a Perl launcher that forks the runner (the guard is instead launched as the shell's own background child), calls `setpgrp(0, 0)` in that process, marks the expected group leader, and then executes the private start path.
 The private path verifies that the runner PID is also its process-group id before it records a claim, so neither entry point can inherit and claim the caller's process group.
 Without this launcher, reconcile would silently fail to start a runner on macOS and direct start could make retirement signal unrelated caller-group processes.
 
