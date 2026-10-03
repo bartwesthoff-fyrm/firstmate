@@ -19,6 +19,10 @@
 # The receipt binds the terminal observation to the canonical registration and
 # lets a restart finish fixed-path removal without executing state-file bytes.
 
+_FM_PR_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
+# shellcheck source=bin/fm-trace-context-lib.sh
+. "$_FM_PR_LIB_DIR/fm-trace-context-lib.sh"
+
 FM_PR_PROVIDER=
 FM_PR_URL=
 FM_PR_HOST=
@@ -277,20 +281,6 @@ fm_pr_control_relaunch_tx_valid() {
   [[ "$tx" =~ ^[0-9]+\.[0-9]{8}T[0-9]{6}Z\.[0-9]+$ ]]
 }
 
-# The W3C trace-context carrier bin/fm-spawn.sh records as traceparent= when
-# trace context is on. A relaunch drops it from the rewritten record and appends
-# it again as the last line, after the preserved pr= identity block, so it too
-# legitimately lands AFTER pr=. Only the exact shape fm_trace_context_valid
-# (bin/fm-trace-context-lib.sh) records is accepted there: version 00, a 32-hex
-# trace id and a 16-hex span id that are not all zero, and 2-hex flags.
-fm_pr_traceparent_valid() {
-  local tp=${1-}
-  local LC_ALL=C
-  [[ "$tp" =~ ^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$ ]] || return 1
-  [ "${tp:3:32}" != 00000000000000000000000000000000 ] &&
-    [ "${tp:36:16}" != 0000000000000000 ]
-}
-
 # The one reading of a GitHub pull request's draft state. Prints "true" or
 # "false" for a boolean isDraft and nothing for anything else, so a caller can
 # tell a positive draft from an unreadable payload. bin/fm-pr-merge.sh refuses
@@ -416,15 +406,16 @@ fm_pr_metadata_identity_parse() {
         ;;
       # Known task-record fields that a later writer legitimately appends after
       # the pr= identity block: the X-link fields, and the relaunch transaction
-      # marker (fm_pr_control_relaunch_tx_valid) and trace-context carrier
-      # (fm_pr_traceparent_valid), whose values are still checked.
+      # marker (fm_pr_control_relaunch_tx_valid) and the trace-context carrier
+      # a relaunch re-appends last (fm_trace_context_valid in
+      # bin/fm-trace-context-lib.sh), whose values are still checked.
       x_request=*|x_request_ts=*|x_followups=*|x_platform=*|x_reply_max_chars=*)
         ;;
       control_relaunch_tx=*)
         fm_pr_control_relaunch_tx_valid "${line#control_relaunch_tx=}" || post_pr_invalid=1
         ;;
       traceparent=*)
-        fm_pr_traceparent_valid "${line#traceparent=}" || post_pr_invalid=1
+        fm_trace_context_valid "${line#traceparent=}" || post_pr_invalid=1
         ;;
       *)
         [ "$seen_pr" -eq 0 ] || post_pr_invalid=1
