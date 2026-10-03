@@ -67,8 +67,22 @@ for i in $(seq 1 60); do
   sleep 1
 done
 [ "$ready" = 1 ] || fail 'idle composer not rendered'
+# The first prompt after launch intermittently went unanswered within the
+# background wait, so complete one round trip first. Enter repeats until the
+# reply renders; on an empty composer it is a no-op.
+lab pane send-text "$PANE" 'Reply with exactly WARM_READY and stop.' >/dev/null || fail 'warm-up prompt failed'
+warm=0
+for i in $(seq 1 90); do
+  if [ $((i % 3)) = 1 ]; then lab pane send-keys "$PANE" enter >/dev/null || fail 'warm-up submit failed'; fi
+  screen=$(lab pane read "$PANE" --source visible 2>/dev/null || true)
+  case "$screen" in *'⏺ WARM_READY'*'❯'*) warm=1; break ;; esac
+  sleep 1
+done
+[ "$warm" = 1 ] || fail 'Claude never accepted a submitted prompt'
 # shellcheck disable=SC2016
 lab pane send-text "$PANE" 'Use the Bash tool to start a tracked background command `sleep 90` (run_in_background=true). Once started, reply exactly BACKGROUND_READY and stop. Do not wait for it.' >/dev/null || fail 'background prompt failed'
+# Settle after typing before Enter, as the product's Herdr submit path does.
+sleep 1
 lab pane send-keys "$PANE" enter >/dev/null || fail 'background submit failed'
 settled=0
 for i in $(seq 1 75); do
@@ -86,6 +100,7 @@ native=$(lab agent get "$PANE" | jq -r '.result.agent.agent_status // empty')
 if pane_is_busy "$TARGET" herdr; then fail "idle background task judged busy (source=$PANE_BUSY_SOURCE native=$native)"; fi
 # shellcheck disable=SC2016
 lab pane send-text "$PANE" 'Run the Bash tool command `sleep 12` in the foreground, then reply exactly TURN_DONE.' >/dev/null || fail 'foreground prompt failed'
+sleep 1
 lab pane send-keys "$PANE" enter >/dev/null || fail 'foreground submit failed'
 busy=0
 for i in $(seq 1 14); do
@@ -103,6 +118,7 @@ for i in $(seq 1 50); do
 done
 [ "$settled" = 1 ] || fail 'completed turn remained busy'
 lab pane send-text "$PANE" 'Reply with exactly ACK and stop.' >/dev/null || fail 'one-line prompt failed'
+sleep 1
 lab pane send-keys "$PANE" enter >/dev/null || fail 'one-line submit failed'
 settled=0
 for i in $(seq 1 45); do
@@ -116,6 +132,7 @@ done
 # Exit the test agent and its tracked background task before lab teardown.
 # Claude prompts for confirmation rather than stopping a live task on /exit.
 lab pane send-text "$PANE" '/exit' >/dev/null || fail 'exit text failed'
+sleep 1
 lab pane send-keys "$PANE" enter >/dev/null || fail 'exit submit failed'
 for i in $(seq 1 15); do
   screen=$(lab pane read "$PANE" --source visible 2>/dev/null || true)

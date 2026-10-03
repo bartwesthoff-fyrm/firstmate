@@ -1244,6 +1244,13 @@ The prompt-submitting guard re-checks the live `pane_is_busy` verdicts: idle bes
 FM_AFK_CLAUDE_BUSY_LIVE=1 tests/fm-afk-claude-busy-live-e2e.test.sh
 ```
 
+On Herdr 0.9.3 the guard's first prompt intermittently went unanswered within the background wait, so the guard now completes a warm-up round trip before the background step.
+Observed 2026-10-03 on Herdr 0.9.3:
+
+```text
+ok - Claude Code 2.1.288 (Claude Code) on Herdr herdr 0.9.3: background task and one-line reply idle, mid-turn busy
+```
+
 ### Claude exit behind the slash-command popup
 
 Measured 2026-09-26 against Herdr 0.9.0 and Claude Code 2.1.283 in an isolated `fm-lab-` session.
