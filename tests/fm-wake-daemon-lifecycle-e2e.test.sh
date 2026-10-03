@@ -40,21 +40,32 @@ TMP_ROOT=$(fm_test_tmproot fm-wake-daemon-e2e)
 # always-on standalone triage is covered by fm-watch-triage.test.sh. fakebin
 # shadows tmux. Echoes nothing; the caller reads $out.
 run_watcher_once() {
-  local state=$1 fakebin=$2 out=$3
+  local state=$1 fakebin=$2 out=$3 preserve_last_check=${4:-0}
   mkdir -p "$state"
   date '+%s' > "$state/.afk"
-  rm -f "$state/.last-check"
+  [ "$preserve_last_check" = 1 ] || rm -f "$state/.last-check"
+  local reference_time last_check_before
+  reference_time=$(date '+%s')
+  last_check_before=$(stat -f '%m' "$state/.last-check" 2>/dev/null || stat -c '%Y' "$state/.last-check" 2>/dev/null || printf 'missing')
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  local watcher_pid=$! i=0
+  local watcher_pid=$! i=0 last_check_now
   # The watcher touches .last-check after startup reconciliation and immediately
-  # before its first status-signal scan; wait for that real readiness event.
-  while [ ! -e "$state/.last-check" ] && [ "$i" -lt 300 ]; do
+  # before its first status-signal scan; require a fresh mtime after launch.
+  while [ "$i" -lt 300 ]; do
+    last_check_now=$(stat -f '%m' "$state/.last-check" 2>/dev/null || stat -c '%Y' "$state/.last-check" 2>/dev/null || printf 'missing')
+    if [ "$last_check_now" != missing ] && [ "$last_check_now" != "$last_check_before" ] \
+      && [ "$last_check_now" -ge "$reference_time" ]; then
+      break
+    fi
     sleep 0.1
     i=$((i + 1))
   done
-  [ -e "$state/.last-check" ] || { kill "$watcher_pid" 2>/dev/null || true; wait "$watcher_pid" 2>/dev/null || true; return 124; }
-  wait_for_exit "$watcher_pid" 50
+  if [ "$i" -ge 300 ]; then
+    wait_for_exit "$watcher_pid" 50 >/dev/null 2>&1 || true
+    return 124
+  fi
+  wait_for_exit "$watcher_pid" 300
 }
 
 ack_handled_wakes() {  # <state> <drain-stderr>
@@ -95,7 +106,7 @@ test_routine_then_terminal_after_restart() {
   # down; the next watcher run must catch it up (losslessness across restart).
   printf 'done: PR https://example.test/pr/900\n' >> "$status_file"
   : > "$out"
-  run_watcher_once "$state" "$fakebin" "$out" || fail "restarted watcher did not exit for the terminal signal"
+  run_watcher_once "$state" "$fakebin" "$out" 1 || fail "restarted watcher did not exit for the terminal signal"
   grep -F "signal: $status_file" "$out" >/dev/null || fail "terminal signal written while watcher down was not caught on restart"
 
   # Drain and route the terminal: exactly ONE digest is buffered.
