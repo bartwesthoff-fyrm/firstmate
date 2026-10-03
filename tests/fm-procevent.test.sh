@@ -1483,7 +1483,11 @@ LAVISH_COUNT="$TMP_ROOT/retry-count"; LAVISH_SCRIPT="interrupt interrupt feedbac
 PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HRETRY" \
   "$ROOT/bin/fm-procevent-lavish.sh" arm "$RETRY_ART" >/dev/null
 PATH="$LAVISH_SCRIPTED_BIN:$PATH" pe "$HRETRY" reconcile >/dev/null
-wait_for "$HRETRY/state/.wake-queue" || fail "feedback after interrupted polls produced no wake"
+# The first two polls must finish and wait out the adapter's real retry floor
+# before the feedback poll can publish. On a busy host, process scheduling adds
+# to that floor; wait for the durable wake rather than assuming ten seconds is
+# enough to complete three separate polls and their publication.
+wait_for "$HRETRY/state/.wake-queue" 600 || fail "feedback after interrupted polls produced no wake"
 [ "$(cat "$LAVISH_COUNT")" = 3 ] \
   || fail "the interrupted listener was polled $(cat "$LAVISH_COUNT") times, not the two quiet retries plus the delivering poll"
 [ "$(count_results "$HRETRY" "$retry_id")" = 1 ] \
@@ -2272,9 +2276,9 @@ awk '/^argv:$/ { print; exit } { print }' "$EP_SOURCE" > "$TMP_ROOT/episode-bad.
   || fail "could not prepare the damaged episode registration"
 ep_damage() { cat "$TMP_ROOT/episode-bad.source" > "$EP_SOURCE"; }
 ep_repair() { cat "$TMP_ROOT/episode-good.source" > "$EP_SOURCE"; }
-ep_reconcile() {  # <expected-fragment> <expected-exit-nonzero:0|1> <msg>; sets ep_out
+ep_reconcile() {  # <expected-fragment> <expected-exit-nonzero:0|1> <msg> [confirm-seconds]; sets ep_out
   local rc=0
-  ep_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=2 pe "$HEP" reconcile) || rc=$?
+  ep_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS="${4:-2}" pe "$HEP" reconcile) || rc=$?
   assert_contains "$ep_out" "$1" "$3: $ep_out"
   if [ "$2" -eq 1 ]; then
     [ "$rc" -ne 0 ] || fail "$3 (reconcile exited 0): $ep_out"
@@ -2316,7 +2320,11 @@ ep_reconcile "failed=1" 1 "the second cycle stopped relaunching a source that ca
 [ "$(launch_failed_wake_count "$HEP" episode-src)" = 1 ] \
   || fail "the same failure episode was announced twice: $ep_out"
 ep_repair
-ep_reconcile "started=1" 0 "a repaired source did not confirm"
+# The two-second window above keeps the deliberately broken launches quick.
+# It cannot prove a repaired runner is broken when a loaded host merely delays
+# its claim beyond that operational deadline. Give the healthy launch enough
+# time to leave the observable claim or launch stamp before asserting success.
+ep_reconcile "started=1" 0 "a repaired source did not confirm" 30
 assert_contains "$ep_out" "failed=0" "a repaired source was still reported failed: $ep_out"
 [ "$(launch_failed_wake_count "$HEP" episode-src)" = 1 ] \
   || fail "a confirmed launch produced a launch-failed wake: $ep_out"
@@ -2439,7 +2447,11 @@ wait_for "$FC_READY" || fail "the fast-source fixture could not hold a source lo
 ) &
 FC_RELEASER=$!
 fc_rc=0
-fc_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=2 pe "$HFC" reconcile) || fc_rc=$?
+# Confirmation starts after the fast runner has finished and the held lock is
+# released; that scheduling barrier can itself outlast two seconds under load.
+# A long confirmation window preserves the test's actual assertion: the fast
+# run must be recognized by its durable stamp even after its claim is gone.
+fc_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=60 pe "$HFC" reconcile) || fc_rc=$?
 wait "$FC_RELEASER" 2>/dev/null || true
 wait "$HOLDER_PID" 2>/dev/null || true
 first_result "$HFC" aa-fast-src >/dev/null \
