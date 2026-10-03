@@ -1238,6 +1238,7 @@ The overnight false-positive root cause remains unverified: the lab did not repr
 The daemon now records `source=native` or `source=rendered` with backend, harness, and `version_at_daemon_start` on the existing busy-deferral log line, so a recurrence can identify the deciding signal without changing its safety posture.
 That version is what the harness CLI on the daemon's PATH reported once at daemon start, so it can lag a primary that auto-updated later.
 `tests/fm-daemon.test.sh` pins the source attribution with a stubbed native verdict and real tmux-rendered panes, and the start-time version probe with stub CLIs.
+`tests/fm-afk-inject-e2e.test.sh` starts a real claude-pinned daemon with a stub `claude` CLI and requires its busy deferral on a rendered Claude footer to name that stub's version.
 The prompt-submitting guard re-checks the live `pane_is_busy` verdicts: idle beside a tracked background task and after a one-line reply, busy during a foreground Bash turn:
 
 ```sh
