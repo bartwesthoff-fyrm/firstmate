@@ -2287,6 +2287,16 @@ awk '/^argv:$/ { print; exit } { print }' "$EP_SOURCE" > "$TMP_ROOT/episode-bad.
   || fail "could not prepare the damaged episode registration"
 ep_damage() { cat "$TMP_ROOT/episode-bad.source" > "$EP_SOURCE"; }
 ep_repair() { cat "$TMP_ROOT/episode-good.source" > "$EP_SOURCE"; }
+ep_runners_exited() {
+  local _
+  for _ in $(seq 1 600); do
+    case "$(ps -A -ww -o command= 2>/dev/null)" in
+      *"$ROOT/bin/fm-procevent.sh _start episode-src"*) sleep 0.1 ;;
+      *) return 0 ;;
+    esac
+  done
+  return 1
+}
 ep_reconcile() {  # <expected-fragment> <expected-exit-nonzero:0|1> <msg> [confirm-seconds]; sets ep_out
   local rc=0
   ep_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS="${4:-2}" pe "$HEP" reconcile) || rc=$?
@@ -2330,6 +2340,7 @@ esac
 ep_reconcile "failed=1" 1 "the second cycle stopped relaunching a source that cannot start"
 [ "$(launch_failed_wake_count "$HEP" episode-src)" = 1 ] \
   || fail "the same failure episode was announced twice: $ep_out"
+ep_runners_exited || fail "the failed episode launches never exited"
 ep_repair
 # The two-second window above keeps the deliberately broken launches quick.
 # It cannot prove a repaired runner is broken when a loaded host merely delays
@@ -2339,6 +2350,7 @@ ep_reconcile "started=1" 0 "a repaired source did not confirm" 30
 assert_contains "$ep_out" "failed=0" "a repaired source was still reported failed: $ep_out"
 [ "$(launch_failed_wake_count "$HEP" episode-src)" = 1 ] \
   || fail "a confirmed launch produced a launch-failed wake: $ep_out"
+ep_runners_exited || fail "the confirmed episode runner never exited"
 for _ in $(seq 1 100); do
   [ -e "$FM_PROCEVENT_CLAIM_ROOT/episode-src.claim" ] || break
   sleep 0.1
@@ -2360,6 +2372,7 @@ case "$ep_key_again" in
   "$ep_episode_prefix"-*) ;;
   *) fail "the second episode ran under a different registration identity: $ep_key_again (first: $ep_key)" ;;
 esac
+ep_runners_exited || fail "the failed episode launches never exited"
 ep_repair
 pe "$HEP" retire episode-src >/dev/null 2>&1 || true
 pass "a launch that cannot confirm is announced once per failure episode"
