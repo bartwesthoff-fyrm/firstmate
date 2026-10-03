@@ -269,6 +269,8 @@ POLL=${FM_POLL:-15}                   # seconds between cycles
 # The remote reads made inside this watcher's own cycle (the pending-reply
 # observe and the secondmate liveness state probe) carry this deadline on their
 # fm-on.sh calls, never in the environment of the processes the watcher starts.
+# The crew-state read behind signal and stale triage (bin/fm-crew-state.sh)
+# carries the same fixed deadline on its own remote endpoint read.
 # fm-on.sh's connect timeout ends a banner that never arrives; the deadline ends
 # a command the host accepted but stalled, so a few slow reads stay well inside
 # the stale grace below. The detached remote reply runner bounds its own calls.

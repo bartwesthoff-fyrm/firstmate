@@ -716,8 +716,9 @@ exec sleep 300
 SH
   chmod +x "$w/fakebin/ssh"
 
-  # A host that answers the banner but stalls the command. The cycle's two
-  # in-cycle reads (the pending-reply observe and the liveness state probe) run
+  # A host that answers the banner but stalls the command. The cycle's three
+  # in-cycle reads (the pending-reply observe, the liveness state probe, and the
+  # crew-state read behind signal triage of a routine remote working: line) run
   # side by side and must each end at the watcher's in-cycle bound.
   started=$(date +%s)
   # shellcheck disable=SC2016 # The child bash expands its own variables.
@@ -727,9 +728,13 @@ SH
       . "$0/bin/fm-watch.sh"
       corr=$(fm_pending_reply_create "$FM_HOME" "$STATE" rsm1 "status of the remote work")
       fm_pending_reply_mark_delivered "$STATE" "$corr"
+      printf "working: remote progress\n" >> "$STATE/rsm1.status"
       fm_pending_reply_tick "$STATE" "$REMOTE_READ_DEADLINE" &
+      reply_pid=$!
+      if signal_crew_provably_working "$STATE/rsm1.status"; then echo working; else echo surfaced; fi > "$FM_HOME/triage.out" &
+      triage_pid=$!
       secondmate_liveness_tick
-      wait "$!"
+      wait "$reply_pid" "$triage_pid"
       fm_pending_reply_get "$(fm_pending_reply_path "$STATE" "$corr")" phase
     ' "$ROOT")
   elapsed=$(($(date +%s) - started))
@@ -738,8 +743,10 @@ SH
   assert_contains "$(cat "$w/home/state/.watch-triage.log")" \
     'secondmate rsm1 liveness: remote host unavailable or endpoint state unknown; route preserved on lab-host' \
     "a stalled liveness probe must read as unreachable"
-  [ "$(grep -c 'ConnectTimeout=10' "$w/ssh.log")" -eq 2 ] \
-    || fail "both in-cycle reads must reach ssh with the fixed connect timeout: $(cat "$w/ssh.log")"
+  assert_equals surfaced "$(cat "$w/home/triage.out")" \
+    "a stalled crew-state read must not prove a remote mate working"
+  [ "$(grep -c 'ConnectTimeout=10' "$w/ssh.log")" -eq 3 ] && [ "$(wc -l < "$w/ssh.log")" -eq 3 ] \
+    || fail "all three in-cycle reads must reach ssh with the fixed connect timeout: $(cat "$w/ssh.log")"
 
   # A host whose sshd never sends the banner fails at the connect timeout,
   # before the in-cycle bound.
