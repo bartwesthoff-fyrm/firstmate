@@ -23,8 +23,10 @@
 #       also collapses into 124: there it means the bound fired, not that the
 #       command chose to die. On every mechanism the command reads the
 #       caller's stdin, and a TERM that would end the caller is passed on to the
-#       command's own group, so an outer bound that ends the caller ends the
-#       command too.
+#       command's own group, so an outer bound that ends the caller also ends a
+#       command that exits on TERM. Only the bash fallback then escalates to
+#       KILL; on timeout, gtimeout, and perl a command that ignores TERM
+#       outlives that cancellation with no bound left.
 #
 #   fm_exec_timed <seconds> <grace-seconds> <command> [args...]
 #       Replaces the calling shell with the bounded command, so it must be the
