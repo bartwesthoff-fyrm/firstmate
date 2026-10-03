@@ -2987,6 +2987,7 @@ test_pane_is_busy_herdr_native_busy_state() {
     fm_backend_capture() { fail "capture should not be consulted when busy_state is conclusive"; }
     FM_STATE_OVERRIDE="$dir/state" FM_DAEMON_PRIMARY_HARNESS=claude pane_is_busy "default:w1:p2" herdr \
       || fail "pane_is_busy should report busy from herdr's native busy_state"
+    [ "$PANE_BUSY_SOURCE" = native ] || fail "Herdr native busy source was not retained"
   ) || fail "herdr native-busy pane_is_busy subshell failed"
   pass "pane_is_busy: herdr native busy_state='busy' short-circuits without a capture fallback"
 }
@@ -3002,6 +3003,48 @@ test_primary_busy_guard_is_harness_scoped() {
       || fail "OpenCode's rendered signature should classify an OpenCode primary busy"
   ) || fail "harness-scoped primary busy guard subshell failed"
   pass "primary busy guard isolates rendered signatures by detected harness"
+}
+
+test_primary_busy_source_with_live_processes() {
+  command -v tmux >/dev/null 2>&1 || { pass "primary busy-source regression skipped: tmux unavailable"; return; }
+  local dir state
+  dir=$(make_supercase primary-busy-sources)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    tmux() { command tmux -L "fm-daemon-busy-$$" "$@"; }
+    trap 'tmux kill-server 2>/dev/null || true' EXIT
+    tmux -f /dev/null new-session -d -s source -x 100 -y 25 \
+      'sleep 30 & printf "1 shell still running\n"; wait' || exit 1
+    tmux new-window -d -t source -n rendered \
+      'printf "✢ Pollinating… (16s · thought for 1s)\n"; exec sleep 30' || exit 1
+    # The shell and its background process are alive while their rendered pane
+    # has no busy footer. The second pane has a busy footer while native is idle.
+    sleep 0.3
+    [ "$(tmux display-message -p -t source:0 '#{pane_dead}')" = 0 ] || fail "background pane died"
+    [ "$(tmux display-message -p -t source:rendered '#{pane_dead}')" = 0 ] || fail "rendered pane died"
+    local idle busy
+    idle=$(tmux capture-pane -p -t source:0 -S -40)
+    busy=$(tmux capture-pane -p -t source:rendered -S -40)
+    printf '%s' "$idle" | fm_busy_lines_match claude && fail "background shell accidentally rendered a Claude busy signal"
+    printf '%s' "$busy" | fm_busy_lines_match claude || fail "rendered pane did not render a Claude busy signal"
+    fm_backend_busy_state() { [ "$2" = source:0 ] && printf busy || printf idle; }
+    fm_daemon_primary_version() { printf '2.1.test'; }
+    FM_DAEMON_PRIMARY_HARNESS=claude
+    pane_is_busy source:0 tmux || fail "native busy source lost with idle rendered pane"
+    [ "$PANE_BUSY_SOURCE" = native ] || fail "native busy verdict was not attributed to native"
+    pane_is_busy source:rendered tmux || fail "rendered busy source lost with native idle"
+    [ "$PANE_BUSY_SOURCE" = rendered ] || fail "rendered busy verdict was not attributed to rendered"
+    LOG="$dir/daemon.log" FM_SUPERVISOR_TARGET=source:rendered FM_SUPERVISOR_BACKEND=tmux
+    inject_msg 'escalation' "$state" && fail "a rendered-busy pane must defer injection"
+    assert_contains "$(<"$LOG")" 'source=rendered, backend=tmux, harness=claude, version=2.1.test' \
+      "deferred injection did not identify the rendered signal and harness version"
+    FM_SUPERVISOR_TARGET=source:0
+    inject_msg 'escalation' "$state" && fail "a native-busy pane must defer injection"
+    assert_contains "$(<"$LOG")" 'source=native, backend=tmux, harness=claude, version=2.1.test' \
+      "deferred injection did not identify the native signal and harness version"
+  ) || fail "live-process busy-source subshell failed"
+  pass "primary busy source: native and rendered signals remain independent and a deferral names the evidence"
 }
 
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted() {
@@ -3272,6 +3315,7 @@ test_fm_send_exits_nonzero_on_unproven_submit
 test_discover_supervisor_backend_precedence
 test_discover_supervisor_target_herdr
 test_pane_is_busy_herdr_native_busy_state
+test_primary_busy_source_with_live_processes
 test_primary_busy_guard_is_harness_scoped
 test_pane_is_busy_defaults_to_tmux_when_backend_omitted
 test_pane_input_pending_herdr_dispatch

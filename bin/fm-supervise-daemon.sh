@@ -693,16 +693,39 @@ fm_daemon_primary_harness() {
   printf '%s' "$FM_DAEMON_PRIMARY_HARNESS"
 }
 
+# The source is retained in the calling shell so a deferred escalation can
+# name the evidence that held it. Native idle is not conclusive on Herdr, so a
+# rendered match after native idle must be attributed to the rendered reader.
 pane_is_busy() {  # <target> [backend]
   local target=$1 backend=${2:-tmux} native tail40 harness
+  PANE_BUSY_SOURCE=
   harness=$(fm_daemon_primary_harness)
   native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)
-  case "$native" in
-    busy) return 0 ;;
-  esac
+  if [ "$native" = busy ]; then
+    PANE_BUSY_SOURCE=native
+    return 0
+  fi
   tail40=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null) || return 1
-  printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \
-    | fm_busy_lines_match "$harness"
+  if printf '%s' "$tail40" | grep -v '^[[:space:]]*$' | tail -12 \
+    | fm_busy_lines_match "$harness"; then
+    PANE_BUSY_SOURCE=rendered
+    return 0
+  fi
+  return 1
+}
+
+# Resolve the primary version only when a busy deferral needs diagnostics.
+# Do not run an unrecognized executable inferred from a pane's process name.
+fm_daemon_primary_version() {
+  local harness=$1 version
+  case "$harness" in
+    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|omp|muse|gemini|rovo|agy|devin)
+      version=$("$harness" --version 2>/dev/null | head -1) || version=
+      version=${version//[$'\r\n']/ }
+      printf '%s' "${version:-unavailable}"
+      ;;
+    *) printf 'unavailable' ;;
+  esac
 }
 
 # pane_input_pending dispatches through fm_backend_composer_state and treats
@@ -1446,7 +1469,7 @@ inject_msg() {  # <message> [state]
   # (3) Busy-guard: never inject into an in-use supervisor pane.
   if pane_is_busy "$target" "$backend"; then
     INJECT_LAST_FAILURE="deferred: supervisor pane busy (agent mid-turn)"
-    log "inject $INJECT_LAST_FAILURE"
+    log "inject $INJECT_LAST_FAILURE (source=${PANE_BUSY_SOURCE:-unavailable}, backend=$backend, harness=$(fm_daemon_primary_harness), version=$(fm_daemon_primary_version "$(fm_daemon_primary_harness)"))"
     return 1
   fi
   #   b) Composer-guard: inject ONLY into a confirmed-empty GENUINE agent

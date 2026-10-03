@@ -1229,6 +1229,19 @@ Observed 2026-08-19:
 ok - live Herdr submit confirm: Claude Code (2.1.236 (Claude Code)) on herdr 0.8.0 reports empty for a landed idle steer
 ```
 
+### Away-supervisor Claude busy signal
+
+Measured 2026-10-03 against Claude Code 2.1.288 and Herdr 0.9.1 in a named isolated lab session.
+A tracked background Bash `sleep` remained running after Claude's reply, while `agent get` reported `idle`, the rendered tail showed `1 shell still running`, and `pane_is_busy` reported idle.
+After another one-line reply it still reported idle; during a real foreground Bash turn it reported busy.
+The overnight false-positive root cause remains unverified: the lab did not reproduce a busy verdict on an idle Claude pane, and the date-change reminder was not reproduced.
+The daemon now records `source=native` or `source=rendered` with backend, harness, and version on the existing busy-deferral log line, so a recurrence can identify the deciding signal without changing its safety posture.
+`tests/fm-daemon.test.sh` pins divergent native and rendered signals with real tmux shell processes, and the prompt-submitting guard refreshes the live claim:
+
+```sh
+FM_AFK_CLAUDE_BUSY_LIVE=1 tests/fm-afk-claude-busy-live-e2e.test.sh
+```
+
 ### Claude exit behind the slash-command popup
 
 Measured 2026-09-26 against Herdr 0.9.0 and Claude Code 2.1.283 in an isolated `fm-lab-` session.
