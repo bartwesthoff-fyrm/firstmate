@@ -2164,6 +2164,102 @@ test_merged_poll_retires_once() {
   pass "validated merged polls notify once and retire before the next watcher cycle"
 }
 
+# A relaunched worker's record is rewritten by bin/fm-spawn.sh: every field it
+# owns first, then the preserved pr= identity block, then its
+# control_relaunch_tx= marker last. The parser used to reject ANY key following
+# pr=, so the watcher refused that task's authenticated merge poll before
+# execution on every cycle (seen 2026-09-27 against an already-recorded PR).
+# The known relaunch marker is accepted wherever it lands, while a malformed
+# marker value or an unknown key after pr= stays refused.
+test_relaunched_record_keeps_merge_poll_armed() {
+  local dir state url head tx rc mutation id n
+  url=https://github.com/o/r/pull/1
+  head=0123456789abcdef0123456789abcdef01234567
+  tx=4242.20260927T093012Z.8123
+
+  # A malformed marker value, an empty marker, and an unknown key are each still
+  # refused after the recorded identity block.
+  dir=$(make_case relaunched-record-refusals)
+  state="$dir/home/state"
+  n=0
+  for mutation in "control_relaunch_tx=4242-not-a-transaction" "control_relaunch_tx=" "harness=claude"; do
+    n=$((n + 1))
+    id=reject-$n
+    fm_write_meta "$state/$id.meta" \
+      "window=fm-$id" \
+      "endpoint_task_id=$id" \
+      "worktree=$dir/wt" \
+      "project=$dir/project" \
+      "kind=ship" \
+      "mode=no-mistakes" \
+      "pr=$url" \
+      "pr_head=$head"
+    seed_canonical_poll "$dir" "$id" "$url"
+    fm_pr_poll_artifacts_valid "$state" "$id" "$POLL" \
+      || fail "refusal fixture did not authenticate before its bad field"
+    # The bad field is appended the way a later writer appends it, after the
+    # armed poll's recorded identity block.
+    printf '%s\n' "$mutation" >> "$state/$id.meta"
+    ! fm_pr_metadata_identity_parse "$state/$id.meta" \
+      || fail "$mutation after pr= was accepted as a PR identity"
+    ! fm_pr_poll_artifacts_valid "$state" "$id" "$POLL" \
+      || fail "$mutation after pr= left an authenticated merge poll"
+  done
+
+  dir=$(make_case relaunched-record-merge-poll)
+  state="$dir/home/state"
+  # The exact marker the relaunch path writes is accepted after pr_head=, and
+  # in any other position too, so a record order never decides whether the
+  # recorded PR can still be polled for its merge.
+  fm_write_meta "$state/task-a.meta" \
+    "window=fm-task-a" \
+    "endpoint_task_id=task-a" \
+    "worktree=$dir/wt" \
+    "project=$dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=$url" \
+    "pr_head=$head" \
+    "control_relaunch_tx=$tx"
+  seed_canonical_poll "$dir" task-a "$url"
+  fm_pr_metadata_identity_parse "$state/task-a.meta" \
+    || fail "a relaunch marker after pr_head= refused the recorded PR identity"
+  [ "$FM_PR_META_URL" = "$url" ] || fail "a relaunch marker changed the parsed PR URL"
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "a relaunch marker after pr_head= unauthenticated the armed merge poll"
+
+  add_stop_custom_check "$dir"
+  set +e
+  FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "the merge poll of a relaunched task failed: $(cat "$dir/watch.err")"
+  case "$(cat "$dir/watch.out")" in
+    *task-a.check.sh:*merged*) ;;
+    *) fail "the merge poll of a relaunched task did not execute: $(cat "$dir/watch.out")" ;;
+  esac
+
+  # The marker before pr= is the same record and stays just as valid.
+  dir=$(make_case relaunched-record-marker-before-pr)
+  state="$dir/home/state"
+  fm_write_meta "$state/task-a.meta" \
+    "window=fm-task-a" \
+    "endpoint_task_id=task-a" \
+    "worktree=$dir/wt" \
+    "project=$dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "control_relaunch_tx=$tx" \
+    "pr=$url" \
+    "pr_head=$head"
+  seed_canonical_poll "$dir" task-a "$url"
+  fm_pr_metadata_identity_parse "$state/task-a.meta" \
+    || fail "a relaunch marker before pr= refused the recorded PR identity"
+  fm_pr_poll_artifacts_valid "$state" task-a "$POLL" \
+    || fail "a relaunch marker before pr= unauthenticated the armed merge poll"
+  pass "a relaunched task keeps its merge poll while an invalid field after pr= is refused"
+}
+
 # A poll's own retirement state is scoped to ONE registration, so it cannot by
 # itself catch a poll re-registered for a task whose merge was already
 # surfaced (e.g. bin/fm-pr-check.sh re-armed after the fact). The per-task
@@ -3446,6 +3542,7 @@ test_gerrit_arming_records_no_patch_set_revision
 test_gerrit_ready_gate_reads_the_published_tree
 test_gerrit_nm_ready_gate_requires_recovered_custody
 test_merged_poll_retires_once
+test_relaunched_record_keeps_merge_poll_armed
 test_merged_poll_reregistration_after_notification_is_absorbed
 test_merged_poll_retries_a_failed_upward_report
 test_self_merge_and_poll_publish_one_outcome

@@ -265,6 +265,18 @@ fm_pr_head_valid() {
   [[ "$head" =~ ^[0-9a-f]{40}$|^[0-9a-f]{64}$ ]]
 }
 
+# The relaunch transaction marker bin/fm-spawn.sh records when its parent is
+# bin/fm-control.sh, whose own shape is <pid>.<UTC stamp>.<random>. A relaunch
+# rewrites the task record with every field it owns first and preserves the
+# earlier pr= identity block after them, so this marker legitimately lands AFTER
+# pr=. Only its exact recorded shape is accepted there; a malformed value keeps
+# the identity block invalid.
+fm_pr_control_relaunch_tx_valid() {
+  local tx=${1-}
+  local LC_ALL=C
+  [[ "$tx" =~ ^[0-9]+\.[0-9]{8}T[0-9]{6}Z\.[0-9]+$ ]]
+}
+
 # The one reading of a GitHub pull request's draft state. Prints "true" or
 # "false" for a boolean isDraft and nothing for anything else, so a caller can
 # tell a positive draft from an unreadable payload. bin/fm-pr-merge.sh refuses
@@ -388,7 +400,13 @@ fm_pr_metadata_identity_parse() {
           fm_pr_head_valid "$value" || post_pr_invalid=1
         fi
         ;;
+      # Known task-record fields that a later writer legitimately appends after
+      # the pr= identity block: the X-link fields, and the relaunch transaction
+      # marker (fm_pr_control_relaunch_tx_valid), whose value is still checked.
       x_request=*|x_request_ts=*|x_followups=*|x_platform=*|x_reply_max_chars=*)
+        ;;
+      control_relaunch_tx=*)
+        fm_pr_control_relaunch_tx_valid "${line#control_relaunch_tx=}" || post_pr_invalid=1
         ;;
       *)
         [ "$seen_pr" -eq 0 ] || post_pr_invalid=1
