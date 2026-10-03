@@ -726,7 +726,8 @@ fm_daemon_resolve_primary() {
     claude|codex|opencode|pi|pi-signed|grok|kimi|omp|muse|gemini|rovo|agy|devin) bin=$FM_DAEMON_PRIMARY_HARNESS ;;
   esac
   [ -z "$bin" ] || version=$(fm_run_timed 5 "$bin" --version 2>/dev/null </dev/null | head -1)
-  version=${version//[$'\r\n']/}
+  version=$(printf '%s' "$version" | LC_ALL=C tr -cd ' -~')
+  version=${version:0:80}
   FM_DAEMON_PRIMARY_VERSION=${version:-unavailable}
 }
 

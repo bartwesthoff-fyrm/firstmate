@@ -3076,7 +3076,11 @@ SH
 #!/usr/bin/env bash
 exec sleep 30
 SH
-  chmod +x "$bin/cursor-agent" "$bin/cursor" "$bin/claude"
+  cat > "$bin/codex" <<'SH'
+#!/usr/bin/env bash
+printf '\033[1mcodex %s\033[0m\n' "$(printf 'x%.0s' {1..200})"
+SH
+  chmod +x "$bin/cursor-agent" "$bin/cursor" "$bin/claude" "$bin/codex"
   afk_enter "$state"
   (
     fm_backend_busy_state() { printf busy; }
@@ -3096,6 +3100,11 @@ SH
     PATH="$dir/fakebin:$PATH" inject_msg 'escalation' "$state" && fail "a busy pane must defer injection"
     assert_contains "$(<"$LOG")" 'harness=claude, version_at_daemon_start=unavailable)' \
       "a hung --version was not reported as unavailable"
+    FM_DAEMON_PRIMARY_HARNESS=codex
+    PATH="$bin:$PATH" fm_daemon_resolve_primary
+    PATH="$dir/fakebin:$PATH" inject_msg 'escalation' "$state" && fail "a busy pane must defer injection"
+    assert_contains "$(<"$LOG")" "harness=codex, version_at_daemon_start=[1mcodex $(printf 'x%.0s' {1..71}))" \
+      "an escape sequence and over-long --version line were not logged sanitized and truncated to 80 chars"
   ) || fail "primary version subshell failed"
   pass "primary version: probed once at daemon start through the harness CLI, bounded, and reused by every busy deferral"
 }
