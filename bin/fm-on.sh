@@ -32,7 +32,7 @@
 # is doing, so a legitimately long-but-alive remote command is never falsely
 # killed. FM_SSH_ALIVE_INTERVAL and FM_SSH_ALIVE_COUNT_MAX override the
 # defaults; the worst-case detection window is roughly interval * count.
-# Watcher callers opt in to FM_SSH_DEADLINE_SECONDS, which bounds the whole SSH
+# Supervision reads opt in to FM_SSH_DEADLINE_SECONDS, which bounds the whole SSH
 # exchange (including a live connection stalled on remote work) and adds a 10s
 # ConnectTimeout so a banner that never arrives fails first. Expiration maps to
 # transport-unavailable status 255, and other callers' long jobs are left alone.
