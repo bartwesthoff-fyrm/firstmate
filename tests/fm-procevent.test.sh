@@ -691,7 +691,9 @@ printf '<h1>review</h1>\n' > "$REVIEW_ART"
 lavish_session "$REVIEW_ART"
 lavish_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$REVIEW_ART")
 fm_test_track_procevent_home "$HLT"
-PATH="$LAVISH_BIN:$PATH" FM_HOME="$HLT" "$ROOT/bin/fm-procevent-lavish.sh" arm "$REVIEW_ART" >/dev/null
+PATH="$LAVISH_BIN:$PATH" FM_HOME="$HLT" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$REVIEW_ART" >/dev/null \
+  || fail "arm did not establish the Send & End listener"
 for _ in $(seq 1 6); do
   PATH="$LAVISH_BIN:$PATH" pe "$HLT" reconcile >/dev/null
   sleep 0.3
@@ -732,8 +734,9 @@ printf '<h1>quiet</h1>\n' > "$QUIET_ART"
 lavish_session "$QUIET_ART"
 quiet_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$QUIET_ART")
 fm_test_track_procevent_home "$HEMPTY"
-PATH="$EMPTY_BIN:$PATH" FM_HOME="$HEMPTY" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$QUIET_ART" >/dev/null
+PATH="$EMPTY_BIN:$PATH" FM_HOME="$HEMPTY" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$QUIET_ART" >/dev/null \
+  || fail "arm did not establish the empty-close listener"
 quiet_out=$(PATH="$EMPTY_BIN:$PATH" pe "$HEMPTY" start "$quiet_id" 2>&1)
 assert_not_contains "$quiet_out" "not-autohandled" \
   "a durably silenced result was reported as still unacknowledged"
@@ -1384,8 +1387,9 @@ printf '<h1>answered</h1>\n' > "$ANSWER_ART"
 lavish_session "$ANSWER_ART"
 answer_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$ANSWER_ART")
 fm_test_track_procevent_home "$HANSWER"
-PATH="$ANSWER_BIN:$PATH" FM_HOME="$HANSWER" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ANSWER_ART" >/dev/null
+PATH="$ANSWER_BIN:$PATH" FM_HOME="$HANSWER" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$ANSWER_ART" >/dev/null \
+  || fail "arm did not establish the answered-board listener"
 PATH="$ANSWER_BIN:$PATH" pe "$HANSWER" reconcile >/dev/null
 wait_for "$HANSWER/state/.wake-queue" \
   || fail "a board close carrying the captain's real answer produced no wake"
@@ -1480,8 +1484,9 @@ lavish_session "$RETRY_ART"
 retry_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$RETRY_ART")
 fm_test_track_procevent_home "$HRETRY"
 LAVISH_COUNT="$TMP_ROOT/retry-count"; LAVISH_SCRIPT="interrupt interrupt feedback"
-PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HRETRY" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$RETRY_ART" >/dev/null
+PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HRETRY" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$RETRY_ART" >/dev/null \
+  || fail "arm did not establish the interrupted-poll listener"
 PATH="$LAVISH_SCRIPTED_BIN:$PATH" pe "$HRETRY" reconcile >/dev/null
 # The first two polls must finish and wait out the adapter's real retry floor
 # before the feedback poll can publish. On a busy host, process scheduling adds
@@ -1598,8 +1603,9 @@ lavish_session "$EXH_ART"
 exh_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$EXH_ART")
 fm_test_track_procevent_home "$HEXH"
 LAVISH_COUNT="$TMP_ROOT/exhaust-count"; LAVISH_SCRIPT="interrupt"
-PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HEXH" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$EXH_ART" >/dev/null
+PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HEXH" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$EXH_ART" >/dev/null \
+  || fail "arm did not establish the retry-exhaustion listener"
 wait_capture "$HEXH" "$exh_id" 200 \
   || fail "exhaustion produced no captured result"
 [ "$(cat "$LAVISH_COUNT")" = 13 ] \
@@ -1625,8 +1631,9 @@ lavish_session "$OTHER_ART"
 other_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$OTHER_ART")
 fm_test_track_procevent_home "$HOTHER"
 LAVISH_COUNT="$TMP_ROOT/other-count"; LAVISH_SCRIPT="other-server-error"
-PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HOTHER" \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$OTHER_ART" >/dev/null
+PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HOTHER" FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$OTHER_ART" >/dev/null \
+  || fail "arm did not establish the unrelated-SERVER_ERROR listener"
 wait_for "$HOTHER/state/.wake-queue" \
   || fail "an unrelated SERVER_ERROR is captured and announced immediately"
 [ "$(cat "$LAVISH_COUNT")" = 1 ] \
@@ -1648,7 +1655,9 @@ near_id=$("$ROOT/bin/fm-procevent-lavish.sh" source-id "$NEAR_ART")
 fm_test_track_procevent_home "$HNEAR"
 LAVISH_COUNT="$TMP_ROOT/near-count"; LAVISH_SCRIPT="near-interrupt feedback"
 PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HNEAR" FM_LAVISH_POLL_RETRY_DELAY=1 \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$NEAR_ART" >/dev/null
+  FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$NEAR_ART" >/dev/null \
+  || fail "arm did not establish the near-match interruption listener"
 wait_for "$HNEAR/state/.wake-queue" \
   || fail "a whitespace variant of the interruption is captured and announced immediately"
 [ "$(cat "$LAVISH_COUNT")" = 1 ] \
@@ -1704,8 +1713,9 @@ fm_test_track_procevent_home "$HSTREAM"
 LAVISH_COUNT="$TMP_ROOT/stream-count"; LAVISH_SCRIPT="stream"
 PATH="$LAVISH_SCRIPTED_BIN:$PATH" FM_HOME="$HSTREAM" TMPDIR="$STREAM_TMPDIR" \
   LAVISH_STREAM_READY="$LAVISH_STREAM_READY" LAVISH_STREAM_RELEASE="$LAVISH_STREAM_RELEASE" \
-  FM_PROCEVENT_MAX_OUTPUT_BYTES=100 \
-  "$ROOT/bin/fm-procevent-lavish.sh" arm "$STREAM_ART" >/dev/null
+  FM_PROCEVENT_MAX_OUTPUT_BYTES=100 FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=30 \
+  "$ROOT/bin/fm-procevent-lavish.sh" arm "$STREAM_ART" >/dev/null \
+  || fail "arm did not establish the streaming listener"
 wait_for "$LAVISH_STREAM_READY" || fail "streaming poll did not start"
 stream_staged=("$STREAM_TMPDIR"/fm-lavish-poll.*)
 [ -e "${stream_staged[0]}" ] || fail "streaming poll created no classifier staging file"
@@ -2447,10 +2457,12 @@ wait_for "$FC_READY" || fail "the fast-source fixture could not hold a source lo
 ) &
 FC_RELEASER=$!
 fc_rc=0
-# Confirmation starts after the fast runner has finished and the held lock is
-# released; that scheduling barrier can itself outlast two seconds under load.
-# A long confirmation window preserves the test's actual assertion: the fast
-# run must be recognized by its durable stamp even after its claim is gone.
+# Reconcile waits on the held lock with no deadline, so the confirm deadline
+# begins only after that barrier, once the held source's runner is detached.
+# The window has to cover just that runner's own startup and claim, which a
+# loaded host can delay past two seconds. A long confirmation window preserves
+# the test's actual assertion: the fast run must be recognized by its durable
+# stamp even after its claim is gone.
 fc_out=$(FM_PROCEVENT_LAUNCH_CONFIRM_SECONDS=60 pe "$HFC" reconcile) || fc_rc=$?
 wait "$FC_RELEASER" 2>/dev/null || true
 wait "$HOLDER_PID" 2>/dev/null || true
@@ -4907,7 +4919,7 @@ done
 [ ! -e "$drain_claim" ] || fail "the first generation of the draining fixture never exited"
 # Stand the first generation's claim back up on a live process so the re-arm
 # meets it still held, then release it partway through the confirm window.
-setsid sleep 60 &
+perl -MPOSIX=setsid -e 'setsid() >= 0 or exit 1; exec @ARGV' sleep 60 &
 drain_holder=$!
 # Read the identity only once the holder has exec'd sleep: mid-exec its cmdline
 # can read empty, and a pre-exec identity would never match the live holder.
