@@ -1,0 +1,24 @@
+# tripwire PATH prefix: fake harness CLIs (claude codex cursor-agent cursor opencode pi pi-signed grok kimi omp muse gemini rovo agy devin) log every call and exit 97
+$ PATH="$TRIPWIRE:$PATH" bash tests/fm-afk-inject-e2e.test.sh
+ok - Scenario A: partial input defers injection; digest arrives clean after idle
+ok - Scenario B: swallowed Enter produces exactly one clean digest
+ok - Scenario C: a normal captain status injects exactly one clean single-line sentinel digest
+ok - Scenario D: a claude primary receives one plain doorbell whose record the away-mode return check reads as internal, and a busy deferral names the version probed at daemon start
+all e2e injection tests passed
+exit=0
+$ PATH="$TRIPWIRE:$PATH" bash tests/fm-daemon.test.sh
+ok - pane_is_busy: herdr native busy_state='busy' short-circuits without a capture fallback
+ok - primary busy source: native and rendered signals remain independent and a deferral names the evidence
+ok - primary version: probed once at daemon start through the harness CLI, bounded, and reused by every busy deferral
+ok - primary busy guard isolates rendered signatures by detected harness
+exit=
+--- tripwire calls.log (host harness binaries invoked by the tests):
+--- end (0 calls)
+$ PATH="$TRIPWIRE:$PATH" bash tests/fm-daemon.test.sh   (exit=0; 139 ok, 0 not ok)
+--- lines for the busy-source / version probe tests:
+ok - pane_is_busy: herdr native busy_state='busy' short-circuits without a capture fallback
+ok - primary busy source: native and rendered signals remain independent and a deferral names the evidence
+ok - primary version: probed once at daemon start through the harness CLI, bounded, and reused by every busy deferral
+ok - primary busy guard isolates rendered signatures by detected harness
+--- tripwire calls.log (host harness binaries invoked):
+--- end (0 calls)

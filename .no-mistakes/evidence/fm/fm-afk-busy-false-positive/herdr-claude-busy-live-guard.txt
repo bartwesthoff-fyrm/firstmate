@@ -1,0 +1,5 @@
+Sat Oct  3 17:55:16 CEST 2026
+$ FM_AFK_CLAUDE_BUSY_LIVE=1 tests/fm-afk-claude-busy-live-e2e.test.sh
+ok - Claude Code 2.1.288 (Claude Code) on Herdr herdr 0.9.3: background task and one-line reply idle, mid-turn busy
+exit=0
+Sat Oct  3 17:55:56 CEST 2026

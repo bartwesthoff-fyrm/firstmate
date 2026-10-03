@@ -1,0 +1,19 @@
+== case hung: harness=claude, supervisor pane %0 renders: Working (esc to interrupt)
+daemon start logged 6.7s after launch
+--- daemon log (hung):
+[2026-10-03T18:16:47+0200] daemon starting (pid 8933); target=%0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; stale_escalate=999999s; batch=0s
+[2026-10-03T18:16:50+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=claude, version_at_daemon_start=unavailable)
+[2026-10-03T18:16:52+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=claude, version_at_daemon_start=unavailable)
+--- leftover hung --version processes: 0
+--- harness CLI calls so far:
+claude --version
+== case cursor: harness=cursor, supervisor pane %2 renders: ctrl+c to stop
+daemon start logged 0.7s after launch
+--- daemon log (cursor):
+[2026-10-03T18:16:55+0200] daemon starting (pid 21238); target=%2; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=on; inject_skip='heartbeat'; stale_escalate=999999s; batch=0s
+[2026-10-03T18:16:58+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=cursor, version_at_daemon_start=2026.10.01-stub)
+[2026-10-03T18:16:59+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=cursor, version_at_daemon_start=2026.10.01-stub)
+--- leftover hung --version processes: 0
+--- harness CLI calls so far:
+claude --version
+cursor-agent --version

@@ -1,0 +1,1 @@
+⁣FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): fixer2.status: needs-decision: ask-user: second gate - squash the three fixup commits or keep history? (fixer2) (pre-read; re-arm not needed — watcher daemon-managed)

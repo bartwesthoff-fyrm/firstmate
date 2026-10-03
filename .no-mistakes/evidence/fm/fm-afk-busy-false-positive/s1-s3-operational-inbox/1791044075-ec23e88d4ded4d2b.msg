@@ -1,0 +1,1 @@
+⁣FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): fixer5.status: needs-decision: ask-user: fifth gate - keep the retry at 3 or raise it to 5? (fixer5) (pre-read; re-arm not needed — watcher daemon-managed)

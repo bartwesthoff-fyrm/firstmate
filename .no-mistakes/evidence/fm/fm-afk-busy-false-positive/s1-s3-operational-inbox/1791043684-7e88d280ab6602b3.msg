@@ -1,0 +1,1 @@
+⁣FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): fixer3.status: needs-decision: ask-user: third gate - target release 1.4 or 1.5 for this fix? (fixer3) (pre-read; re-arm not needed — watcher daemon-managed)

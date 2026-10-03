@@ -1,0 +1,1 @@
+⁣FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): fixer4.status: needs-decision: ask-user: fourth gate - drop the deprecated endpoint now or next release? (fixer4) (pre-read; re-arm not needed — watcher daemon-managed)

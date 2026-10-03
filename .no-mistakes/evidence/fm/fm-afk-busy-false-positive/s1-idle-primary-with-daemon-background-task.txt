@@ -1,0 +1,51 @@
+⏺ Captain, you're in away mode. The record was written at 2026-10-03T16:02:37Z, and it holds every decision for your return.
+
+  - Reach: hold-for-return only. There is no phone channel, so anything that needs you waits until you're back.
+  - Your instructions: "going to sleep, hold every decision for my return." I read that as: don't decide anything on your behalf, and queue every question, merge call and approval for you.
+  - Merges and decisions: under that reading, no PR merges and no captain decisions get made while you sleep. Every one of them waits for you.
+  - Expected return: not given.
+  - Spend cap: 4 concurrent workers.
+  - Never pre-authorizable: destructive, irreversible and security-sensitive actions wait for you whatever the words say. Local-only landings and red merges wait as well.
+  - Away session: this home runs the supervision host, so I launched nothing separately. It watches the fleet while you're away. If it has no usable engine, wakes will land in this conversation
+    instead.
+
+  I did not check that state/.afk-contract exists in this worktree. The record was written by bin/fm-afk-launch.sh enter, which reported success.
+
+  Your next message will bring you back. I'll give you the return brief before acting on it. Sending /afk again with new words replaces the mandate.
+
+✻ Crunched for 11s · done 6:02 PM · 1 shell still running
+
+❯ /afk going to sleep, hold every decision for my return. Note: this home has config/supervision-host-off under $FM_HOME, so it does NOT run the supervision host: follow the afk skill native path
+(bin/fm-afk-launch.sh start-native, then FM_AFK_STATE_PREPARED=1 bin/fm-afk-start.sh through your Bash tool with run_in_background=true).
+
+⏺ Bash(bin/fm-afk-launch.sh enter --words "going to sleep, hold every decision for my return. Note: this home has config/supervision-host-off under \$FM_HOME, so it do…)
+  ⎿  fm-afk-contract: replaced the earlier away posture; its record is archived at /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/afk-contracts/1791043357-superseded-179104
+     3414.afk-contract
+     Away posture recorded at 2026-10-03T16:03:34Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbat
+     … +10 lines (ctrl+o to expand)
+
+⏺ Bash(FM_AFK_STATE_PREPARED=1 bin/fm-afk-start.sh)
+  ⎿  Running in the background (↓ to manage)
+
+⏺ Captain, away mode is on and the away daemon is running as a background job. It is the native path you named, since this home has the supervision host switched off.
+
+  - Reach: hold-for-return only. There is no phone channel, so anything that needs you waits until you're back.
+  - Your words: I read "hold every decision for my return" as: decide nothing for you. Every merge call, approval and design pick waits for you. The second half of your message was setup instructions,
+    which I followed. I took it as no authority beyond holding.
+  - Never pre-authorizable: destructive, irreversible and security-sensitive actions wait for you whatever the words say. Local-only landings and red merges wait as well.
+  - Expected return: not given.
+  - Spend cap: 4 concurrent workers.
+  - Earlier record: it is archived with your first wording. The new record replaced it and kept the original entry time of 2026-10-03T16:02:37Z.
+
+  I did not check that the daemon came up cleanly; I only launched it and saw the job start. Your next ordinary message brings you back, and I'll run the return brief before acting on it.
+
+✻ Churned for 12s · done 6:03 PM · 1 shell still running
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Sonnet 5.5 | 5h: 55% · resets 22:00 | 7d: 41% · resets Thu 13:00
+  ⏵⏵ bypass permissions on · 1 shell · ← for agents
+
+
+pane_is_busy(%0, tmux) = IDLE source=<none>

@@ -1,0 +1,1 @@
+⁣FIRSTMATE_OP: v1 away-supervisor: Supervisor escalate (1 event(s)): fixer1.status: needs-decision: ask-user: keep the legacy --since flag name or rename it to --after? Both are safe; captain choice needed before I push (fixer1) (pre-read; re-arm not needed — watcher daemon-managed)

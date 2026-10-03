@@ -1,0 +1,18 @@
+[2026-10-03T18:03:39+0200] daemon starting (pid 89091); target=%0; target_source=TMUX_PANE; backend=tmux; backend_source=TMUX_PANE; afk=on; inject_skip='heartbeat'; stale_escalate=240s; batch=0s
+[2026-10-03T18:05:33+0200] wake: signal: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer1.status
+[2026-10-03T18:05:36+0200] escalate: needs-decision: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer1.status -> fixer1.status: needs-decision: ask-user: keep the legacy --since flag name or rename it to --after? Both are safe; captain choice needed before I push (fixer1)
+[2026-10-03T18:06:53+0200] wake: signal: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer2.status
+[2026-10-03T18:07:00+0200] escalate: needs-decision: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer2.status -> fixer2.status: needs-decision: ask-user: second gate - squash the three fixup commits or keep history? (fixer2)
+[2026-10-03T18:07:56+0200] wake: signal: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer3.status
+[2026-10-03T18:08:03+0200] escalate: needs-decision: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer3.status -> fixer3.status: needs-decision: ask-user: third gate - target release 1.4 or 1.5 for this fix? (fixer3)
+[2026-10-03T18:10:10+0200] wake: signal: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer4.status
+[2026-10-03T18:10:36+0200] escalate: needs-decision: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer4.status -> fixer4.status: needs-decision: ask-user: fourth gate - drop the deprecated endpoint now or next release? (fixer4)
+[2026-10-03T18:13:20+0200] wake: signal: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer5.status
+[2026-10-03T18:13:26+0200] escalate: needs-decision: /var/folders/bd/6sdw6jwd23vf1s9l6xp20fw40000gn/T//fm-lab.UZCTdj/state/fixer5.status -> fixer5.status: needs-decision: ask-user: fifth gate - keep the retry at 3 or raise it to 5? (fixer5)
+[2026-10-03T18:13:26+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=claude, version_at_daemon_start=2.1.288 (Claude Code))
+[2026-10-03T18:13:32+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=claude, version_at_daemon_start=2.1.288 (Claude Code))
+[2026-10-03T18:13:47+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=claude, version_at_daemon_start=2.1.288 (Claude Code))
+[2026-10-03T18:13:48+0200] wake: heartbeat
+[2026-10-03T18:13:54+0200] wake force-self (FM_INJECT_SKIP): heartbeat
+[2026-10-03T18:14:03+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=claude, version_at_daemon_start=2.1.288 (Claude Code))
+[2026-10-03T18:14:19+0200] inject deferred: supervisor pane busy (agent mid-turn) (source=rendered, backend=tmux, harness=claude, version_at_daemon_start=2.1.288 (Claude Code))
