@@ -1012,6 +1012,9 @@ EOF
   supervisor_line=$(grep -n '^You are the first mate\.$' "$ROOT/AGENTS.md" | head -1 | cut -d: -f1)
   [ -n "$role_line" ] && [ "$role_line" -lt "$supervisor_line" ] ||
     fail "Firstmate AGENTS.md does not disambiguate a launched worker before assigning the supervisor identity"
+  project_line=$(grep -n '^A session whose working directory is under `projects/` is a plain project session' "$ROOT/AGENTS.md" | cut -d: -f1)
+  [ -n "$project_line" ] && [ "$project_line" -lt "$supervisor_line" ] ||
+    fail "Firstmate AGENTS.md does not tell a session under projects/ it is not a supervisor before assigning the supervisor identity"
   cmp -s "$ROOT/AGENTS.md" "$home/AGENTS.md" || fail "worker spawn changed the primary contract"
   pass "fm-spawn: every legacy worker receives scoped role instructions without changing project or primary instructions"
 }
