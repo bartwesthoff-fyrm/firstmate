@@ -1,0 +1,36 @@
+### Scenario 3a: live record, dangling status symlink (expect gated rc=3)
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/leftover.status': No such file or directory
+lrwxrwxrwx 1 cooper cooper 30 Oct 28 16:03 /tmp/fm-lab.i1B9yH/home/state/fresh1.status -> /tmp/fm-lab.i1B9yH/nonexistent
+  - status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+fm-afk-return: catch-up must finish before the captain request
+catch-up lifecycle: status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+rc=3
+
+### Scenario 3b: live record, symlink to a real file (expect gated rc=3)
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/leftover.status': No such file or directory
+lrwxrwxrwx 1 cooper cooper 29 Oct 28 16:03 /tmp/fm-lab.i1B9yH/home/state/fresh1.status -> /tmp/fm-lab.i1B9yH/realstatus
+  - status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+fm-afk-return: catch-up must finish before the captain request
+catch-up lifecycle: status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+rc=3
+
+### Scenario 3c: live record, status path is a directory (expect gated rc=3)
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/leftover.status': No such file or directory
+drwxrwxr-x 2 cooper cooper 4096 Oct 28 16:03 /tmp/fm-lab.i1B9yH/home/state/fresh1.status
+  - status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+fm-afk-return: catch-up must finish before the captain request
+catch-up lifecycle: status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+rc=3
+
+### Scenario 4: windowless leftover record with no status (expect gated rc=3)
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/fresh1.status': No such file or directory
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/leftover.status': No such file or directory
+  - status file unreadable: /tmp/fm-lab.i1B9yH/home/state/leftover.status; catch-up stays gated
+fm-afk-return: catch-up must finish before the captain request
+catch-up lifecycle: status file unreadable: /tmp/fm-lab.i1B9yH/home/state/leftover.status; catch-up stays gated
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+rc=3
+

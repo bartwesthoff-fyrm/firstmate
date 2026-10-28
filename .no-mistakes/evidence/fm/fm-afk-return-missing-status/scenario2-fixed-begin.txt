@@ -1,0 +1,27 @@
+### Scenario 2: fresh away cycle, real spawned fresh1 still has no status file
+-rw------- 1 cooper cooper 16 Oct 28 16:03 /tmp/fm-lab.i1B9yH/home/state/.afk
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/fresh1.status': No such file or directory
+### FIXED fm-afk-return.sh begin
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+=== Return brief (away 2026-10-28T16:03:09Z -> 2026-10-28T16:03:17Z, 8s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 3s old at return)
+  - a wake was being handled at return (recovery marker pending:handling); not a gap
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 3s old at return)
+catch-up health: a wake was being handled at return (recovery marker pending:handling); not a gap
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 1961793.1793203378.DgP3tq
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+rc=0
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/.afk-return-catchup': No such file or directory

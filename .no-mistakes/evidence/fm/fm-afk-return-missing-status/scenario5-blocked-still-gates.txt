@@ -1,0 +1,14 @@
+### Scenario 5: worker's first append is a blocked line (expect gated rc=3, blocker listed)
+-rw-rw-r-- 1 cooper cooper 38 Oct 28 16:04 /tmp/fm-lab.i1B9yH/home/state/fresh1.status
+blocked [key=k1]: need lab credential
+  - fresh1 [key=k1] still blocked, firstmate remediates before ordinary work: need lab credential
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 6s old at return)
+catch-up health: a wake was being handled at return (recovery marker pending:handling); not a gap
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: fresh1 [key=k1] blocked: need lab credential
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+firstmate-actionable blocker: fresh1 [key=k1] need lab credential
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+rc=3
+-rw------- 1 cooper cooper 595 Oct 28 16:04 /tmp/fm-lab.i1B9yH/home/state/.afk-return-catchup

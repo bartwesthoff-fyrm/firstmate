@@ -1,0 +1,70 @@
+### state before return: fresh1 record present, status file absent
+-rw-rw-r-- 1 cooper cooper 286 Oct 28 16:02 /tmp/fm-lab.i1B9yH/home/state/fresh1.meta
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/fresh1.status': No such file or directory
+window=primary:fm-fresh1
+endpoint_task_id=fresh1
+worktree=/home/cooper/.treehouse/proj-97e2df/1/proj
+project=/tmp/fm-lab.i1B9yH/proj
+harness=sleep
+kind=ship
+mode=local-only
+yolo=off
+branch=fm/fresh1
+tasktmp=/tmp/fm-fresh1
+model=default
+effort=default
+spawn_gen=s1793203353.1954421.1999
+
+### BASE (4a67799) fm-afk-return.sh begin
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+=== Return brief (away 2026-10-28T16:02:43Z -> 2026-10-28T16:02:59Z, 16s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 12s old at return)
+  - status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 12s old at return)
+catch-up lifecycle: status file unreadable: /tmp/fm-lab.i1B9yH/home/state/fresh1.status; catch-up stays gated
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+rc=3
+
+### gate file after base begin:
+-rw------- 1 cooper cooper 294 Oct 28 16:03 /tmp/fm-lab.i1B9yH/home/state/.afk-return-catchup
+
+### FIXED (6004826) fm-afk-return.sh check
+=== Return brief (away 2026-10-28T16:02:43Z -> 2026-10-28T16:03:01Z, 18s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 12s old at return)
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 12s old at return)
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 1961793.1793203378.DgP3tq
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+rc=0
+
+### gate file after fixed check:
+ls: cannot access '/tmp/fm-lab.i1B9yH/home/state/.afk-return-catchup': No such file or directory
+
+### guard
+rc=0
